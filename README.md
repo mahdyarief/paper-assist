@@ -23,33 +23,31 @@ provider client, no API key handling and no model selection.
 
 - [What changed in v4](#what-changed-in-v4)
 - [How it works](#how-it-works)
-- [Install](#install)
+- [Install as OpenClaude plugin](#install-as-openclaude-plugin)
 - [Using the plugin](#using-the-plugin)
-- [Packs and verification](#packs-and-verification)
-- [CLI reference](#cli-reference)
+- [Writing a paper: AI Harness &rarr; Paper-Assist](#writing-a-paper-ai-harness--paper-assist)
+- [Skills included](#skills-included)
 - [Workspace layout](#workspace-layout)
 - [Scientific integrity](#scientific-integrity)
-- [Testing](#testing)
 - [License](#license)
 
 ## What changed in v4
 
 | Area | v3 | v4 |
 |---|---|---|
-| Language model | Bundled OpenAI-compatible client, provider registry, credentials | None. The AI harness is the executor (`executor: "ai-harness"`, `provider_calls: 0`) |
+| Language model | Bundled OpenAI-compatible client, provider registry, credentials | None. The AI harness is the executor (`provider_calls: 0`) |
 | Generation | In-process agent runtime called the model | Deterministic task packs the harness executes |
-| Integration | Custom CLI only | OpenClaude / Claude Code plugin with skills and an MCP server |
-| Runtime | `ResearchOSRuntime` orchestrated agents | Removed. Pack → harness → import gate *is* the runtime |
-| Review / ideation / experiment | Direct model calls | `pack --kind review\|ideation\|experiment` with validated imports |
+| Integration | Custom CLI only | OpenClaude plugin with skills and an MCP server |
+| Runtime | `ResearchOSRuntime` orchestrated agents | Pack → harness → import gate *is* the runtime |
 | Package | `paperforge` | `paperassist` |
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    U["Researcher or agent"] --> S["Skill / MCP tool / CLI"]
-    S --> P["Task pack<br/>plan.json + tasks + brief"]
-    P --> H["AI harness<br/>(OpenClaude, Claude Code, Freebuff)"]
+    U["Researcher / agent"] --> S["OpenClaude skill / MCP tool"]
+    S --> P["Task pack<br/>plan.json + tasks + agent-brief.md"]
+    P --> H["AI harness<br/>(OpenClaude, Claude Code)"]
     H --> R["Result file<br/>ideas.json / review.json / experiment.json / draft.tex"]
     R --> G["Import gate<br/>deterministic validation"]
     G --> A["Artifacts + SQLite memory"]
@@ -58,10 +56,10 @@ flowchart LR
 PaperAssist never generates text. It owns:
 
 - **Planning**: packs, task lists, briefs, acceptance rules.
-- **Binding**: proposals, compute bindings, protected experiment blocks.
+- **Binding**: protected experiment blocks, citations.
 - **Verification**: citation keys, score ranges, artifact hashes, release gates.
 
-## Install (OpenClaude user-level plugin)
+## Install as OpenClaude plugin
 
 Tambahkan ke direktori plugin user OpenClaude:
 
@@ -72,42 +70,51 @@ cp -r . /c/Users/<you>/.openclaude/plugins/paper-assist
 Atau clone langsung:
 
 ```bash
-git clone https://github.com/QJHWC/PaperAssist.git ~/.openclaude/plugins/paper-assist
+git clone https://github.com/mahdyarief/paper-assist.git ~/.openclaude/plugins/paper-assist
 ```
 
-Lalu aktifkan plugin:
+Lalu aktifkan:
 
 ```bash
 cd ~/.openclaude/plugins/paper-assist
 python -m pip install -r requirements-core.txt
 ```
 
-Cek status:
+Verifikasi MCP server:
 
 ```bash
 python mcp_servers/stdio.py
 ```
 
-## Menggunakan plugin
+## Using the plugin
 
-Plugin ini dideklarasikan oleh `.claude-plugin/plugin.json`; skill dan
-MCP server `paperassist` berada di `mcp_servers/stdio.py`.
+Plugin ini dideklarasikan oleh `.claude-plugin/plugin.json`. Skill dibaca
+dari `skills/`, dan MCP server `paperassist` berada di
+`mcp_servers/stdio.py` (JSON-RPC over stdio).
 
-MCP tools: `harness_status`, `pack_scaffold`, `pack_plan`, `pack_task`,
-`pack_import`, `writing_pack`, `writing_plan`, `writing_task`,
-`writing_import`, `writing_patch`.
+MCP tools (10):
 
-## Packs and verification
+| Group | Tools |
+|---|---|
+| `paperassist` | `harness_status`, `pack_scaffold`, `pack_plan`, `pack_task`, `pack_import` |
+| `writing` | `writing_pack`, `writing_plan`, `writing_task`, `writing_import`, `writing_patch` |
+
+## Writing a paper: AI Harness &rarr; Paper-Assist
+
+PaperAssist bukan generator teks. Alurnya:
+
+1. Harness memanggil `pack_scaffold` (ideation / experiment / review / writing).
+2. Harness membaca `plan.json` + `agent-brief.md` + `tasks/*.json` dari pack.
+3. Harness melakukan pekerjaan (ide, uji, review, draft LaTeX).
+4. Hasil diimpor kembali lewat `pack_import` / `writing_import` — gate
+   deterministik dijalankan sebelum catatan disimpan ke SQLite dan `.paperassist/`.
+
+Contoh:
 
 ```bash
 # ideation
 paperassist pack --kind ideation --workspace . --topic "..." --venue NeurIPS
 paperassist pack --kind ideation --workspace . --run-id <id> --import ideas.json
-
-# experiment
-paperassist pack --kind experiment --workspace . --hypothesis "..." \
-  --metric accuracy --metric f1 --dataset "..."
-paperassist pack --kind experiment --workspace . --run-id <id> --import experiment.json
 
 # review
 paperassist pack --kind review --workspace . --manuscript main.tex
@@ -118,30 +125,20 @@ paperassist write --workspace . --title "..." --topic "..."
 paperassist write --workspace . --run-id <id> --import draft.tex
 ```
 
-Every import runs deterministic gates before anything is recorded:
+> Catatan: perintah `paperassist ...` di atas adalah konsol CLI. Dalam mode
+> plugin OpenClaude, gunakan MCP tool `pack_scaffold`, `pack_task`,
+> `pack_import`, `writing_pack`, dll. melalui UI/chat assistant.
 
-- **Ideation**: exactly one selected idea, hypothesis and evaluation plan
-  present, every reference key resolvable, no secret-like content.
-- **Experiment**: declared metrics present and numeric, code paths exist,
-  artifact SHA-256 matches, `status` in `COMPLETED|FAILED|BLOCKED`.
-- **Review**: NeurIPS rating ranges, `Decision` in `Accept|Reject`, no empty
-  summary; produces `.paperassist/revision/review-revision.{json,md}`.
-- **Writing**: protected `PAPERASSIST-PROTECTED-EXPERIMENT` blocks byte-equal,
-  citations resolve to the allowed bibliography, no secrets.
+## Skills included
 
-## CLI reference
-
-| Command | Purpose |
+| Skill | Purpose |
 |---|---|
-| `paperassist preflight` | Harness, MCP and LaTeX readiness (no credentials) |
-| `paperassist pack --kind …` | Scaffold, inspect or import ideation/review/experiment packs |
-| `paperassist write` | Scaffold, patch or import a writing pack |
-| `paperassist run --profile writing-only\|research\|full` | Create a workflow run and scaffold its pack |
-| `paperassist resume` | Re-scaffold or reuse the persisted pack |
-| `paperassist approve` | Approve a full-experiment proposal |
-| `paperassist publish` | Build the PDF with a publication template |
-| `paperassist release` | Recompute the release gate and write the manifest |
-| `paperassist status` / `unified_status` | Read workflow truth |
+| `write-section` | Draft one section without taking over the pipeline |
+| `refine-section` | Tighten logic/wording/structure in one section |
+| `citation-gap` | Find the single most important missing citation |
+| `citation-select` | Pick references that best fit the manuscript |
+| `de-aigc-rewrite` | Remove templated AI tone without changing the argument |
+| `latex-fix` | Apply one local LaTeX repair round |
 
 ## Workspace layout
 
@@ -153,7 +150,6 @@ Every import runs deterministic gates before anything is recorded:
 │   ├── ideation/<run-id>/      # validated ideas.json
 │   ├── experiments/<run-id>/   # validated result.json
 │   ├── review/<run-id>/        # validated review.json
-│   ├── revision/               # revision tasks derived from a review
 │   ├── publication/
 │   └── release_manifest.json
 ├── artifacts/
@@ -166,20 +162,8 @@ Every import runs deterministic gates before anything is recorded:
 - No invented metrics, datasets, baselines, hardware or citations.
 - Every quantitative claim must trace to a run, artifact or bibliography entry.
 - Protected experiment blocks are author-owned and byte-preserved.
-- Full experiments require an approved proposal with an immutable compute
-  binding; a changed script fails verification.
 - Secrets are rejected at input, never written into a workspace.
-
-## Testing
-
-```bash
-python -m pytest tests -q
-```
-
-The suite covers packs, gates, writing protection, compute bindings,
-publication and release verification. Integration gates for real
-Docker/SSH/Slurm/Kubernetes backends stay opt-in via environment variables.
 
 ## License
 
-MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT. See [LICENSE](LICENSE).

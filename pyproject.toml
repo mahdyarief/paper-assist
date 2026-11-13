@@ -16,6 +16,9 @@ dependencies = [
   "pyyaml>=6.0,<7",
 ]
 
+[project.scripts]
+paperassist = "mcp_servers.stdio:main"
+
 [project.optional-dependencies]
 writing = [
   "numpy==1.26.4",
@@ -25,32 +28,11 @@ writing = [
   "pypdf==6.7.5",
   "requests==2.32.5",
 ]
-pdf = [
-  "pymupdf==1.27.1",
-  "pymupdf4llm==0.3.4",
-  "pypdf==6.7.5",
-]
-experiment = [
-  "datasets==4.6.1",
-  "matplotlib==3.10.8",
-  "paramiko>=3.4,<5",
-  "pyyaml>=6.0,<7",
-  "tiktoken==0.12.0",
-  "torch==2.10.0",
-  "tqdm==4.67.3",
-  "transformers==5.2.0",
-  "wandb==0.25.0",
-]
 dev = [
   "mypy==1.16.1",
   "pytest==8.4.1",
   "ruff==0.12.2",
-  "types-PyYAML==6.0.12.20250516",
-  "types-requests==2.32.4.20250611",
 ]
-
-[project.scripts]
-paperassist = "paperassist.cli:main"
 
 [tool.setuptools]
 py-modules = []
@@ -64,43 +46,18 @@ include = [
 ]
 
 [tool.setuptools.package-data]
-engine = [
-  "fewshot_examples/*.json",
-  "fewshot_examples/*.pdf",
-  "fewshot_examples/*.txt",
-]
-"engine.research_partner" = ["rubrics/*.yaml"]
 skills = [
   "*/*.json",
   "*/SKILL.md",
-  "research-writing-prompts/*.md",
 ]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-ra"
 
 [tool.ruff]
 target-version = "py310"
 line-length = 100
-exclude = [
-  ".venv-writeup",
-  "build",
-  "examples/demos",
-  "output",
-  "results",
-  "third_party",
-]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
-
-[tool.ruff.lint.per-file-ignores]
-"frontend/server.py" = ["E402"]
-"tests/test_server_security.py" = ["E402"]
-"tests/test_agent_bridges.py" = ["SIM117"]
-"tests/test_locking.py" = ["SIM117"]
 
 [tool.mypy]
 python_version = "3.10"
