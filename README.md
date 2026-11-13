@@ -1,14 +1,9 @@
 # PaperAssist
 
 <p align="center">
-  <a href="https://github.com/QJHWC/PaperAssist/actions/workflows/ci.yml">
-    <img src="https://github.com/QJHWC/PaperAssist/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" />
-  </a>
   <img src="https://img.shields.io/badge/version-v4.0.0-2563eb" alt="Version v4.0.0" />
   <img src="https://img.shields.io/badge/Python-3.10--3.12-3776ab?logo=python&logoColor=white" alt="Python 3.10-3.12" />
 </p>
-
-**English** · [Bahasa Indonesia](README.id.md)
 
 PaperAssist is a model-free research runtime and an OpenClaude / Claude Code
 plugin. It plans research, defines controlled experiments, prepares LaTeX
@@ -109,25 +104,23 @@ PaperAssist bukan generator teks. Alurnya:
 4. Hasil diimpor kembali lewat `pack_import` / `writing_import` — gate
    deterministik dijalankan sebelum catatan disimpan ke SQLite dan `.paperassist/`.
 
-Contoh:
+Contoh (dari harness/agent, bukan konsol CLI):
 
-```bash
-# ideation
-paperassist pack --kind ideation --workspace . --topic "..." --venue NeurIPS
-paperassist pack --kind ideation --workspace . --run-id <id> --import ideas.json
+```text
+# 1. Scaffold pack ideation
+pack_scaffold { "workspace": "<ws>", "kind": "ideation", "topic": "...", "venue": "NeurIPS" }
 
-# review
-paperassist pack --kind review --workspace . --manuscript main.tex
-paperassist pack --kind review --workspace . --run-id <id> --import review.json
+# 2. Harness kerjakan task dari pack, lalu impor hasil
+pack_import { "workspace": "<ws>", "run_id": "<id>", "import": "ideas.json" }
 
-# writing
-paperassist write --workspace . --title "..." --topic "..."
-paperassist write --workspace . --run-id <id> --import draft.tex
+# 3. Writing pack untuk draft LaTeX
+writing_pack   { "workspace": "<ws>", "topic": "...", "title": "..." }
+writing_import { "workspace": "<ws>", "run_id": "<id>", "import": "draft.tex" }
 ```
 
-> Catatan: perintah `paperassist ...` di atas adalah konsol CLI. Dalam mode
-> plugin OpenClaude, gunakan MCP tool `pack_scaffold`, `pack_task`,
-> `pack_import`, `writing_pack`, dll. melalui UI/chat assistant.
+> Catatan: tool `pack_scaffold`, `pack_task`, `pack_import`, `writing_pack`,
+> `writing_import`, dst. dipanggil assistant (OpenClaude / Claude Code)
+> melalui MCP server `paperassist` yang sudah aktif sebagai plugin.
 
 ## Skills included
 
