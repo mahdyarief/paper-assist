@@ -19,7 +19,18 @@ from paperassist.agent_packs import (
     load_plan,
     load_task,
 )
+from paperassist.claim_ledger import build_ledger, format_ledger_report
+from paperassist.corpus_binder import (
+    bind_corpus,
+    format_binding_report,
+    generate_bibtex,
+    load_records,
+)
 from paperassist.harness import harness_status
+from paperassist.improvement_loop import format_verdict, revision_plan, verify_revision
+from paperassist.manuscript_quality import format_quality_report, score_manuscript
+from paperassist.provenance_audit import extract_locators
+from paperassist.research_os import read_workspace_text, run_research_os
 
 _KINDS = (KIND_IDEATION, KIND_REVIEW, KIND_EXPERIMENT)
 _BUILDERS = {
@@ -48,6 +59,29 @@ _INPUT_KEYS = frozenset(
     }
 )
 
+_RESEARCH_KEYS = frozenset(
+    {
+        "target_path",
+        "manuscript_path",
+        "records",
+        "records_path",
+        "records_paths",
+        "extraction_path",
+        "fulltext_root",
+        "pdf_root",
+        "bibliography_path",
+        "locators",
+        "locators_payload",
+        "depth_target",
+        "min_anchored",
+        "allow_em_dash",
+        "plan_limit",
+        "run_id",
+        "source_path",
+        "research_source",
+    }
+)
+
 
 def _workspace(value: str) -> Path:
     path = Path(value).expanduser().resolve(strict=True)
@@ -61,6 +95,12 @@ def _kind(value: str) -> str:
     if kind not in _KINDS:
         raise ValueError("kind must be one of " + ", ".join(_KINDS))
     return kind
+
+
+def _payload_locators(raw: list[dict[str, Any]]) -> list[Any]:
+    from paperassist.provenance_audit import load_locators_payload
+
+    return load_locators_payload({"locators": raw})
 
 
 def _default_run_id(kind: str, inputs: dict[str, Any]) -> str:
@@ -103,6 +143,45 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                     "and record it in the workspace."
                 ),
                 requires_workspace_lock=True,
+            ),
+            ToolSpec(
+                name="corpus_bind",
+                description=(
+                    "Bind extracted study records to local full texts and bibliography "
+                    "entries by DOI, title and record id; report citation coverage and "
+                    "emit BibTeX for uncited records."
+                ),
+            ),
+            ToolSpec(
+                name="claim_audit",
+                description=(
+                    "Split a manuscript into a sourced evidence channel and a model "
+                    "narrative channel, with locator/citation/data-record provenance "
+                    "per sentence."
+                ),
+            ),
+            ToolSpec(
+                name="quality_score",
+                description=(
+                    "Score a manuscript across structure, abstract, depth, citations, "
+                    "provenance, evidence, method rigour, limitations, prose style, "
+                    "figures and readability; returns a grade and blocking findings."
+                ),
+            ),
+            ToolSpec(
+                name="research_os",
+                description=(
+                    "Run the full pipeline (bind, audit, score, separate, plan) and "
+                    "write narrative.jsonl and evidence.jsonl as distinct artifacts."
+                ),
+                requires_workspace_lock=True,
+            ),
+            ToolSpec(
+                name="improvement_verify",
+                description=(
+                    "Compare a revision against its baseline and refuse regressions in "
+                    "grounding, unsupported assertions, citations or required sections."
+                ),
             ),
         ]
 
@@ -178,6 +257,153 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                 result_path=result_path,
             )
         return {"status": "ok", "executor": "ai-harness", "provider_calls": 0, **result}
+
+    def corpus_bind(
+        self,
+        workspace: str,
+        records_path: str | None = None,
+        fulltext_root: str | None = None,
+        bibliography_path: str | None = None,
+        records: list[dict[str, Any]] | None = None,
+        emit_bibtex: bool = False,
+    ) -> dict[str, Any]:
+        root = _workspace(workspace)
+        payload: dict[str, Any] = {}
+        if records:
+            payload["records"] = records
+        if records_path:
+            payload["records_path"] = records_path
+        if fulltext_root:
+            payload["fulltext_root"] = fulltext_root
+        if bibliography_path:
+            payload["bibliography_path"] = bibliography_path
+        binding = bind_corpus(root, payload)
+        result: dict[str, Any] = {
+            "status": "ok",
+            "corpus": binding.coverage(),
+            "binding": binding.to_dict(),
+            "report": format_binding_report(binding),
+        }
+        if emit_bibtex:
+            source_records = list(records or [])
+            if not source_records and records_path:
+                source_records = list(load_records(payload, root))
+            bibtex, warnings = generate_bibtex(binding, source_records)
+            result["bibtex"] = bibtex
+            result["bibtex_warnings"] = list(warnings)
+        return result
+
+    def claim_audit(
+        self,
+        workspace: str,
+        target_path: str,
+        locators: list[dict[str, Any]] | None = None,
+        records: list[dict[str, Any]] | None = None,
+        include_claims: bool = False,
+    ) -> dict[str, Any]:
+        root = _workspace(workspace)
+        text = read_workspace_text(root, target_path, what="manuscript")
+        ledger = build_ledger(
+            text,
+            locators=extract_locators(text) if locators is None else _payload_locators(locators),
+            records=list(records or []),
+        )
+        result: dict[str, Any] = {
+            "status": "ok",
+            "summary": ledger.summary(),
+            "digest": ledger.digest,
+            "report": format_ledger_report(ledger),
+            "narrative_jsonl": ledger.to_jsonl("narrative"),
+            "evidence_jsonl": ledger.to_jsonl("evidence"),
+        }
+        if include_claims:
+            result["ledger"] = ledger.to_dict()
+        return result
+
+    def quality_score(
+        self,
+        workspace: str,
+        target_path: str,
+        depth_target: int = 500,
+        min_anchored: float = 0.6,
+        allow_em_dash: bool = False,
+        bibliography_path: str | None = None,
+    ) -> dict[str, Any]:
+        root = _workspace(workspace)
+        text = read_workspace_text(root, target_path, what="manuscript")
+        entries: list[str] = []
+        bib_text: str | None = None
+        if bibliography_path:
+            bib_text = read_workspace_text(root, bibliography_path, what="bibliography")
+            from paperassist.corpus_binder import parse_bib_entries
+
+            entries = [entry.key for entry in parse_bib_entries(bib_text)]
+        report = score_manuscript(
+            text,
+            bibliography_entries=entries,
+            bibliography_text=bib_text,
+            depth_target=depth_target,
+            min_anchored=min_anchored,
+            allow_em_dash=allow_em_dash,
+        )
+        return {
+            "status": "ok",
+            "score": round(report.score, 4),
+            "grade": report.grade,
+            "recommendation": report.recommendation,
+            "report": report.to_dict(),
+            "markdown": format_quality_report(report),
+            "revision_plan": list(revision_plan(report)),
+        }
+
+    def research_os(self, workspace: str, **payload: Any) -> dict[str, Any]:
+        root = _workspace(workspace)
+        inputs = {
+            key: value
+            for key, value in payload.items()
+            if key in _RESEARCH_KEYS and value not in (None, "", [], ())
+        }
+        with self.workspace_lock(root):
+            result = run_research_os(root, inputs)
+        return {"status": "ok", "executor": "ai-harness", "provider_calls": 0, **result.to_dict()}
+
+    def improvement_verify(
+        self,
+        workspace: str,
+        before_path: str,
+        after_path: str,
+        depth_target: int = 500,
+        max_grounding_drop: float = 0.05,
+        max_dimension_drop: float = 0.05,
+        allow_em_dash: bool = False,
+    ) -> dict[str, Any]:
+        root = _workspace(workspace)
+        before_text = read_workspace_text(root, before_path, what="baseline")
+        after_text = read_workspace_text(root, after_path, what="revision")
+        before_ledger = build_ledger(before_text, locators=extract_locators(before_text))
+        after_ledger = build_ledger(after_text, locators=extract_locators(after_text))
+        before = score_manuscript(
+            before_text, ledger=before_ledger, depth_target=depth_target,
+            allow_em_dash=allow_em_dash,
+        )
+        after = score_manuscript(
+            after_text, ledger=after_ledger, depth_target=depth_target,
+            allow_em_dash=allow_em_dash,
+        )
+        verdict = verify_revision(
+            before,
+            after,
+            before_ledger=before_ledger,
+            after_ledger=after_ledger,
+            max_grounding_drop=max_grounding_drop,
+            max_dimension_drop=max_dimension_drop,
+        )
+        return {
+            "status": "ok",
+            "accepted": verdict.accepted,
+            "verdict": verdict.to_dict(),
+            "markdown": format_verdict(verdict),
+        }
 
     def read_resource(
         self,

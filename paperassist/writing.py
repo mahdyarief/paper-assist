@@ -28,6 +28,12 @@ from .protected_blocks import (
     extract_protected_blocks,
     protected_blocks_sha256,
 )
+from .provenance_audit import (
+    ProvenanceReport,
+    audit as audit_provenance,
+    extract_locators,
+    load_locators_payload,
+)
 from .references import DEFAULT_REFERENCE_BUDGET_BYTES
 from .writing_pack import (
     WRITING_PACK_ROOT,
@@ -74,10 +80,13 @@ class WritingResult:
     request_sha256: str
     response_sha256: str
     writing_mode: str = "agent"
+    provenance: ProvenanceReport | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["artifact"] = self.artifact.to_dict()
+        if self.provenance is not None:
+            payload["provenance"] = self.provenance.to_dict()
         return payload
 
 
@@ -310,6 +319,13 @@ class WritingEngine:
             protected_blocks=protected_blocks,
             bibliography_keys=bibliography_keys,
         )
+        provenance = self._audit_provenance(candidate, payload, run_id=run_id)
+        if provenance is not None and not provenance.passed:
+            if self._provenance_is_blocking(payload):
+                rendered = "; ".join(provenance.warnings) or "provenance audit failed"
+                raise WritingSafetyError(
+                    "provenance gate refused the draft: " + rendered
+                )
         before_sha256 = protected_blocks_sha256(original)
         atomic_write_text(self.workspace, relative_path, candidate + "\n")
         written = self.workspace / relative_path
@@ -350,6 +366,15 @@ class WritingEngine:
                         payload.get("writing_pack_run_id") or run_id
                     ),
                     "provider_calls": 0,
+                    "provenance_passed": (
+                        None if provenance is None else provenance.passed
+                    ),
+                    "provenance_grounded_ratio": (
+                        None if provenance is None else round(provenance.grounded_ratio, 4)
+                    ),
+                    "provenance_anchorless": (
+                        None if provenance is None else len(provenance.anchorless_keys)
+                    ),
                 },
             )
         except BaseException:
@@ -370,7 +395,127 @@ class WritingEngine:
                 (raw_candidate if candidate_source is None else candidate_source).encode("utf-8")
             ).hexdigest(),
             response_sha256=hashlib.sha256(candidate.encode("utf-8")).hexdigest(),
+            provenance=provenance,
         )
+
+    def _audit_provenance(
+        self, candidate: str, payload: Mapping[str, Any], run_id: str = ""
+    ) -> ProvenanceReport | None:
+        """Run the deterministic locator/grounding audit when it is requested.
+
+        The audit is opt-in so that existing workspaces keep working unchanged.
+        It is enabled by ``provenance: true`` in the import payload, or when the
+        pack plan recorded a depth profile that requires provenance tasks.
+        """
+
+        mode = payload.get("provenance")
+        plan_profile = self._pack_depth_profile(
+            str(payload.get("writing_pack_run_id") or payload.get("run_id") or "")
+        )
+        plan_requires = bool(plan_profile.get("require_provenance_task"))
+        enabled = mode is True or str(mode).lower() in {"true", "on", "enforce"}
+        if not enabled and not plan_requires:
+            return None
+        if mode is False or str(mode).lower() in {"false", "off", "skip"}:
+            return None
+
+        locators = list(extract_locators(candidate))
+        locators.extend(load_locators_payload(payload.get("locators_payload")))
+        references_payload = self._load_references_payload(run_id)
+        require_locators = bool(payload.get("require_locators", True))
+        min_ratio = payload.get("min_grounding_ratio")
+        ratio = (
+            float(min_ratio)
+            if isinstance(min_ratio, (int, float)) and not isinstance(min_ratio, bool)
+            else 0.5
+        )
+        return audit_provenance(
+            candidate,
+            locators=tuple(locators),
+            references_payload=references_payload,
+            require_locators=require_locators,
+            min_grounding_ratio=ratio,
+        )
+
+    def _provenance_is_blocking(self, payload: Mapping[str, Any]) -> bool:
+        mode = payload.get("provenance_block", payload.get("provenance"))
+        if isinstance(mode, bool):
+            return mode
+        if str(mode).lower() in {"false", "off", "warn", "skip"}:
+            return False
+        if str(mode).lower() in {"true", "on", "enforce", "block"}:
+            return True
+        plan_profile = self._pack_depth_profile(
+            str(payload.get("writing_pack_run_id") or payload.get("run_id") or "")
+        )
+        return bool(plan_profile.get("require_provenance_task"))
+
+    def _pack_depth_profile(self, run_id: str) -> Mapping[str, Any]:
+        plan = self._pack_plan(run_id)
+        if not isinstance(plan, Mapping):
+            return {}
+        profile = plan.get("depth_profile")
+        return profile if isinstance(profile, Mapping) else {}
+
+    def _pack_plan(self, run_id: str) -> Mapping[str, Any] | None:
+        if not run_id:
+            return None
+        plan = (
+            self.workspace
+            / WRITING_PACK_ROOT
+            / pack_directory_name(run_id)
+            / WRITING_PLAN_FILENAME
+        )
+        if not plan.is_file():
+            return None
+        try:
+            payload = json.loads(plan.read_text(encoding="utf-8"))
+        except ValueError:
+            return None
+        return payload if isinstance(payload, Mapping) else None
+
+    def _load_references_payload(self, run_id: str = "") -> Mapping[str, Any] | None:
+        plans: list[Path] = []
+        if run_id:
+            active = (
+                self.workspace
+                / WRITING_PACK_ROOT
+                / pack_directory_name(run_id)
+                / WRITING_PLAN_FILENAME
+            )
+            if active.is_file():
+                plans.append(active)
+        plans.extend(
+            sorted(
+                (
+                    self.workspace / WRITING_PACK_ROOT
+                ).glob(f"*/{WRITING_PLAN_FILENAME}")
+            )
+        )
+        for pack_plan in plans:
+            try:
+                plan = json.loads(pack_plan.read_text(encoding="utf-8"))
+            except ValueError:
+                continue
+            if not isinstance(plan, Mapping):
+                continue
+            candidates: list[Path] = []
+            relative = plan.get("references_path")
+            if relative:
+                candidates.append(self.workspace / str(relative))
+            # Excerpts may be regenerated after the pack was built, leaving
+            # ``references_path`` unset; the pack directory still holds them.
+            candidates.append(pack_plan.parent / "references.json")
+            for target in candidates:
+                if not target.is_file():
+                    continue
+                try:
+                    payload = json.loads(target.read_text(encoding="utf-8"))
+                except ValueError:
+                    continue
+                if isinstance(payload, Mapping):
+                    return payload
+        return None
 
     def _pack_digest(self, run_id: str) -> str | None:
         plan = (

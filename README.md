@@ -21,6 +21,7 @@ provider client, no API key handling and no model selection.
 - [Install as OpenClaude plugin](#install-as-openclaude-plugin)
 - [Using the plugin](#using-the-plugin)
 - [Writing a paper: AI Harness &rarr; Paper-Assist](#writing-a-paper-ai-harness--paper-assist)
+- [Research OS pipeline](#research-os-pipeline)
 - [Skills included](#skills-included)
 - [Workspace layout](#workspace-layout)
 - [Scientific integrity](#scientific-integrity)
@@ -41,18 +42,21 @@ provider client, no API key handling and no model selection.
 ```mermaid
 flowchart LR
     U["Researcher / agent"] --> S["OpenClaude skill / MCP tool"]
-    S --> P["Task pack<br/>plan.json + tasks + agent-brief.md"]
+    S --> P["Task pack / writing pack<br/>plan.json + tasks + agent-brief.md"]
     P --> H["AI harness<br/>(OpenClaude, Claude Code)"]
     H --> R["Result file<br/>ideas.json / review.json / experiment.json / draft.tex"]
     R --> G["Import gate<br/>deterministic validation"]
     G --> A["Artifacts + SQLite memory"]
+    S --> ROS["Research OS<br/>corpus bind &rarr; claim audit &rarr; quality"]
+    ROS --> A2[".paperassist/research-os/&lt;run_id&gt;/"]
 ```
 
 PaperAssist never generates text. It owns:
 
 - **Planning**: packs, task lists, briefs, acceptance rules.
-- **Binding**: protected experiment blocks, citations.
+- **Binding**: protected experiment blocks, citations, dan korpus penelitian (PDF + records + bibliography).
 - **Verification**: citation keys, score ranges, artifact hashes, release gates.
+- **Audit naskah**: claim ledger, kanal narasi vs bukti, kualitas manuskrip, dan source-coverage untuk SLR/review.
 
 ## Install as OpenClaude plugin
 
@@ -87,11 +91,12 @@ Plugin ini dideklarasikan oleh `.claude-plugin/plugin.json`. Skill dibaca
 dari `skills/`, dan MCP server `paperassist` berada di
 `mcp_servers/stdio.py` (JSON-RPC over stdio).
 
-MCP tools (10):
+MCP tools (15):
 
 | Group | Tools |
 |---|---|
-| `paperassist` | `harness_status`, `pack_scaffold`, `pack_plan`, `pack_task`, `pack_import` |
+| `paperassist` (planning & packs) | `harness_status`, `pack_scaffold`, `pack_plan`, `pack_task`, `pack_import` |
+| `paperassist` (Research OS) | `corpus_bind`, `claim_audit`, `quality_score`, `research_os`, `improvement_verify` |
 | `writing` | `writing_pack`, `writing_plan`, `writing_task`, `writing_import`, `writing_patch` |
 
 ## Writing a paper: AI Harness &rarr; Paper-Assist
@@ -122,6 +127,113 @@ writing_import { "workspace": "<ws>", "run_id": "<id>", "import": "draft.tex" }
 > `writing_import`, dst. dipanggil assistant (OpenClaude / Claude Code)
 > melalui MCP server `paperassist` yang sudah aktif sebagai plugin.
 
+## Research OS pipeline
+
+### Model konseptual
+
+Research OS bukan "agen penulis otomatis". Ia adalah **sistem operasi audit** untuk
+riset berbasis bukti: semua keputusan metodologis dan kalimat ilmiah berada di
+tangan peneliti atau AI harness, sedangkan PaperAssist hanya menyediakan
+deterministic checks yang dapat diulang. Model ini berdiri di atas empat pilar:
+
+| Pilar | Landasan | Implementasi di PaperAssist |
+|---|---|---|
+| **Evidence-first / PRISMA-like traceability** | PRISMA 2020, Kitchenham: identification → screening → eligibility → included; setiap angka dan klaim harus dapat ditelusuri ke sumber | `corpus_bind` mengikat record ekstraksi ↔ PDF lokal ↔ entri BibTeX; PRISMA flow dan extraction records diterima sebagai `records_paths` |
+| **Provenance & claim ledger** | Setiap sitasi membutuhkan *locator* (halaman/baris + kutipan opsional); klaim dibedakan dari narasi | `% @locator{key: page=..., quote="..."}`, status `anchored / grounded / attributed / derived / unsupported`, kanal `evidence` vs `narrative` |
+| **Rubrik kualitas transparan** | Review rubric SINTA/Scopus: struktur, metode, sintesis, batasan, gaya, keterbacaan | `score_manuscript` dengan 11 dimensi berbobot; grade A–E (A ≥ 0.85) dan rekomendasi accept/minor/major/reject |
+| **Human-in-the-loop (HITL)** | AI bukan pembuat data/fakta; peneliti memutuskan, verifikasi tidak bisa dilewatkan | `provider_calls: 0`, import gate, protected experiment blocks, `improvement_verify` membandingkan before/after dan menolak revisi yang menurunkan grounding |
+
+Dengan kata lain: **PaperAssist tidak mengarang isi, tetapi menolak isi yang tidak
+dapat dipertanggungjawabkan.** Model bebas (model-free) berarti LLM hanya
+dipakai untuk mengerjakan task pack yang sudah divalidasi, bukan untuk
+mensubstitusi bukti.
+
+### Cara kerja deterministik
+
+```mermaid
+flowchart TD
+    subgraph IN["Input (peneliti / hasil riset)"]
+        M["manuscript: main.tex<br/>(termasuk \\input / \\include)"]
+        R["records: extraction / PRISMA flow<br/>records_path + records_paths"]
+        F["fulltext_root: PDF/teks studi<br/>+ bibliography_path"]
+        S["opsional: source_path / research_source<br/>naskah sumber riset"]
+        L["opsional: locators + payload gate"]
+    end
+
+    subgraph OS["Research OS (deterministik, provider_calls=0)"]
+        X["expand_includes + _resolve_source<br/>baca teks & validasi path"]
+        B["corpus_bind<br/>DOI/title/record-id → PDF + BibTeX"]
+        C["build_ledger<br/>pisah evidence ↔ narrative + status klaim"]
+        Q["score_manuscript<br/>11 dimensi → grade + findings"]
+        P["revision_plan<br/>urutan perbaikan"]
+        V["audit_source_coverage<br/>heading + angka: covered/partial/missing"]
+        H["AI harness boleh menulis ulang<br/>hanya narrative.jsonl"]
+    end
+
+    subgraph OUT["Artefak .paperassist/research-os/&lt;run_id&gt;/"]
+        A1["corpus-binding.json/.md<br/>corpus-bibliography.bib<br/>study-catalogue.tex"]
+        A2["claim-ledger.json/.md<br/>narrative.jsonl + evidence.jsonl"]
+        A3["quality-report.json/.md<br/>revision-plan.json"]
+        A4["source-coverage.json/.md<br/>source_gaps di revision-plan"]
+        A5["index.md<br/>ringkasan + contract + source gaps"]
+    end
+
+    IN --> X --> B --> C --> Q --> P --> OUT
+    S --> V --> A4
+    V --> P
+    L --> C
+    A2 --> H --> M
+    Q --> A3
+    P --> A3
+    B --> A1
+    C --> A2
+    Q --> A5
+```
+
+**Kontrak pemisahan kanal.** `evidence.jsonl` berisi kalimat bersumber
+(sitasi, locator, atau angka yang terderivasi dari record) dan **tidak boleh
+diubah bebas** oleh harness. `narrative.jsonl` berisi kalimat transisi tanpa
+klaim terverifikasi dan aman untuk dirapikan. Inilah yang membuat revisi
+berbantuan AI tetap diaudit: perubahan gaya tidak boleh menghilangkan bukti.
+
+**Source-coverage.** Bila `source_path`/`research_source` diberikan, Research OS
+membandingkan naskah sumber (MD/LaTeX) dengan manuskrip jurnal berdasarkan
+**kesintasan heading** dan **angka yang diassert** (bukan kemiripan prosa).
+Seksi bibliografi serta identifier (DOI, ISBN, arXiv, deret digit panjang)
+diabaikan agar tidak menghasilkan false positive. Hasilnya dilaporkan sebagai
+`covered`, `partial`, `missing`, dan `unaccounted_numbers`; temuan masuk ke
+`source_gaps` pada `revision-plan.json`. Audit ini menjawab pertanyaan
+*"apakah hasil riset sumber masih terbawa ke paper jurnal?"* sekaligus memberi
+batas yang jujur: naskah jurnal boleh merampingkan prosa, tetapi tidak boleh
+menghilangkan RQ, angka hasil, atau keterbatasan tanpa catatan.
+
+### Contoh pemanggilan MCP
+
+```json
+{
+  "tool": "research_os",
+  "arguments": {
+    "workspace": "D:/riset/SLR2-KELAYAKAN-AI/paper-assist-workspace",
+    "run_id": "slr2-coverage-v1",
+    "target_path": "main.tex",
+    "records_path": "sr_work/ft_extraction.json",
+    "records_paths": ["sr_work/prisma_flow.json"],
+    "fulltext_root": "sr_work/fulltext",
+    "bibliography_path": "references.bib",
+    "source_path": "NASKAH-PAPER-SLR2.md",
+    "depth_target": 500,
+    "min_anchored": 0.6,
+    "plan_limit": 8
+  }
+}
+```
+
+Return value memuat `status`, `executor: "ai-harness"`, `provider_calls: 0`,
+`schema: "paperassist.research-os/v1"`, `output_dir`, dan ringkasan
+`binding / ledger / quality / source_coverage / artifacts`. Untuk revisi,
+jalankan `improvement_verify` dengan `before_path` dan `after_path`; ia
+menolak revisi bila skor grounding atau dimensi turun melebihi ambang.
+
 ## Skills included
 
 | Skill | Purpose |
@@ -143,6 +255,7 @@ writing_import { "workspace": "<ws>", "run_id": "<id>", "import": "draft.tex" }
 │   ├── ideation/<run-id>/      # validated ideas.json
 │   ├── experiments/<run-id>/   # validated result.json
 │   ├── review/<run-id>/        # validated review.json
+│   ├── research-os/<run-id>/   # corpus, ledger, quality, revision, source-coverage
 │   ├── publication/
 │   └── release_manifest.json
 ├── artifacts/
