@@ -43,6 +43,7 @@ from .writing_pack import (
     build_writing_pack,
     pack_directory_name,
     skeleton_document,
+    skeleton_document_kind,
 )
 
 _FENCE = re.compile(r"\A```(?:latex|tex)?\s*\n(?P<body>.*)\n```\s*\Z", re.DOTALL)
@@ -104,8 +105,13 @@ def _strip_fence(text: str) -> str:
     return match.group("body").strip() if match is not None else normalized
 
 
-def _latex_skeleton(title: str) -> str:
-    return skeleton_document(title)
+def _latex_skeleton(title: str, payload: Mapping[str, Any] | None = None) -> str:
+    payload = payload or {}
+    return skeleton_document_kind(
+        title,
+        document_kind=str(payload.get("document_kind") or "paper"),
+        thesis_type=str(payload.get("thesis_type") or "thesis"),
+    )
 
 
 class WritingEngine:
@@ -148,7 +154,9 @@ class WritingEngine:
         safe_run_id = _SAFE_RUN_ID.sub("-", run_id).strip(".-_") or "draft"
         relative = f".paperassist/drafts/{safe_run_id}.tex"
         target, relative = self._workspace_document(relative)
-        return None, relative, _latex_skeleton(str(payload.get("title") or ""))
+        return None, relative, _latex_skeleton(
+            str(payload.get("title") or ""), payload
+        )
 
     @staticmethod
     def _brief(payload: Mapping[str, Any]) -> str:

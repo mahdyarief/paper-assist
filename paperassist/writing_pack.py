@@ -90,6 +90,25 @@ REFINE_SECTIONS = (
     *DEFAULT_SECTIONS,
 )
 
+# Generic thesis mode (document_kind="thesis"). The chapter list is intentionally
+# institution/topic agnostic and fully overridable via payload["sections"]; what
+# follows is a sensible default for a local-language thesis (e.g. Indonesia).
+THESIS_DEFAULT_SECTIONS: tuple[str, ...] = (
+    "Pendahuluan",
+    "Tinjauan Pustaka",
+    "Metodologi Penelitian",
+    "Hasil dan Pembahasan",
+    "Kesimpulan dan Saran",
+)
+THESIS_BARE_SECTIONS: tuple[str, ...] = (
+    "Abstrak",
+    "Pendahuluan",
+    "Tinjauan Pustaka",
+    "Metodologi Penelitian",
+    "Hasil dan Pembahasan",
+    "Kesimpulan dan Saran",
+)
+
 SECTION_BRIEFS: dict[str, str] = {
     "Abstract": """
 - TL;DR of the paper
@@ -136,6 +155,39 @@ One continuous paragraph, no line breaks inside the abstract.
     "Conclusion": """
 - Brief recap of the entire paper.
 - Future work as the natural continuation of the presented results.
+""",
+    # --- Generic thesis chapters (document_kind="thesis") -------------------
+    # Naming follows a common local-thesis convention; the guidance is
+    # topic- and institution-agnostic so it generalises beyond one example.
+    "Abstrak": """
+- Nyatakan latar belakang, tujuan/pertanyaan penelitian, pendekatan/metodologi, temuan utama, dan implikasinya.
+- Gunakan bahasa ringkas dan informatif; jangan menyisipkan hasil atau angka yang tidak ada dalam draf/sumber.
+- Jaga konsistensi dengan abstrak bahasa Inggris bila ada; terjemahkan makna, bukan kata per kata.
+""",
+    "Pendahuluan": """
+- Mulai dari konteks umum lalu persempit ke fokus penelitian.
+- Rumuskan masalah/pertanyaan, tujuan, ruang lingkup/batasan, serta kontribusi atau manfaat secara proporsional.
+- Akhiri dengan sistematika penulisan bila relevan; hindari klaim tanpa dukungan bukti.
+""",
+    "Tinjauan Pustaka": """
+- Sintesis konsep, teori, dan studi terdahulu yang relevan; kelompokkan berdasarkan tema/pendekatan, bukan per makalah.
+- Bandingkan temuan, metode, dan keterbatasan studi sebelumnya untuk memposisikan penelitian ini.
+- Identifikasi celah (gap) penelitian secara eksplisit; gunakan hanya sitasi dari daftar yang diizinkan.
+""",
+    "Metodologi Penelitian": """
+- Jelaskan desain/pendekatan, objek/data/sumber, prosedur, instrumen, dan teknik analisis secara runtut.
+- Nyatakan asumsi, parameter, dan alasan pemilihan metode; pisahkan desain dari hasil.
+- Sertakan validitas, etika, atau keterbatasan metodologis bila relevan, tanpa mengarang detail pelaksanaan.
+""",
+    "Hasil dan Pembahasan": """
+- Sajikan temuan dari bukti yang tersedia dalam draf/data/protected block; jangan mengarang angka atau eksperimen.
+- Bahas makna temuan, kaitkan dengan tujuan/pertanyaan penelitian dan literatur, lalu jelaskan keterbatasan.
+- Bedakan fakta temuan dari interpretasi/implikasi.
+""",
+    "Kesimpulan dan Saran": """
+- Ringkas jawaban atas tujuan/pertanyaan penelitian dari temuan yang didukung draf.
+- Nyatakan keterbatasan secara jujur; berikan saran/pekerjaan lanjut yang konkret dan realistis.
+- Jangan menambah klaim, hasil, atau generalisasi baru yang tidak didukung.
 """,
 }
 
@@ -221,10 +273,14 @@ class WritingPack:
     context_signals: Mapping[str, Any] = field(default_factory=dict)
     depth: str = DEFAULT_DEPTH
     depth_profile: Mapping[str, Any] = field(default_factory=dict)
+    document_kind: str = "paper"
+    thesis_profile: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
+            "document_kind": self.document_kind,
+            "thesis_profile": dict(self.thesis_profile),
             "directory": self.directory,
             "plan_path": self.plan_path,
             "brief_path": self.brief_path,
@@ -260,10 +316,77 @@ def _slug(value: object) -> str:
     return cleaned or "untitled"
 
 
+def _document_kind(payload: Mapping[str, Any]) -> str:
+    """Resolve the document kind from payload, defaulting to a journal paper.
+
+    Only ``"thesis"`` is special-cased; anything else falls back to the paper
+    scaffold. This keeps the mode general and avoids locking behaviour to one
+    institution, language, or example document.
+    """
+
+    kind = str(payload.get("document_kind") or "").strip().lower()
+    if kind in {"thesis", "tesis", "dissertation", "disertasi", "skripsi"}:
+        return "thesis"
+    return "paper"
+
+
 def pack_directory_name(run_id: str) -> str:
     """Stable, filesystem-safe directory name for one writing pack."""
 
     return _slug(run_id)
+
+
+def _thesis_profile(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolved, campus-agnostic thesis formatting profile.
+
+    Defaults generalise common Indonesian-thesis conventions (front matter,
+    report class, chapter structure) but every field is overridable via
+    payload["thesis_profile"], so the same framework serves skripsi, tesis,
+    or disertasi at any institution. Nothing here assumes a specific campus.
+    """
+
+    raw = payload.get("thesis_profile")
+    user = raw if isinstance(raw, Mapping) else {}
+    front_raw = user.get("front_matter")
+    front_user = front_raw if isinstance(front_raw, Mapping) else {}
+    front_matter = {
+        "titlepage": bool(front_user.get("titlepage", True)),
+        "abstract": bool(front_user.get("abstract", True)),
+        "table_of_contents": bool(front_user.get("table_of_contents", True)),
+        "list_of_figures": bool(front_user.get("list_of_figures", True)),
+        "list_of_tables": bool(front_user.get("list_of_tables", True)),
+    }
+    return {
+        "documentclass": str(user.get("documentclass") or "report"),
+        "class_options": str(user.get("class_options") or "12pt"),
+        "language": str(user.get("language") or "indonesian"),
+        "bibliography_style": str(user.get("bibliography_style") or "plain"),
+        "bibliography_file": str(user.get("bibliography_file") or "references"),
+        "front_matter": front_matter,
+    }
+
+
+# Chapter -> section label used in the working skeleton. This mapping is the
+# single place where the generic thesis framework names its structure; override
+# by passing payload["sections"].
+_THESIS_CHAPTER_SECTIONS: dict[str, str] = {
+    "Pendahuluan": "section-pendahuluan",
+    "Tinjauan Pustaka": "section-tinjauan-pustaka",
+    "Metodologi Penelitian": "section-metodologi-penelitian",
+    "Hasil dan Pembahasan": "section-hasil-dan-pembahasan",
+    "Kesimpulan dan Saran": "section-kesimpulan-dan-saran",
+}
+
+
+def _simplify_thesis_section(section: str) -> str:
+    """Lower, slugify, and strip non-alphanumerics from a chapter name.
+
+    Keeps the generic framework usable regardless of the language or naming a
+    given campus uses: callers pass their own chapter titles via
+    payload["sections"] and this produces a stable task id.
+    """
+
+    return re.sub(r"[^a-z0-9]+", "-", section.strip().lower()).strip("-")
 
 
 def parse_bib_entries(text: str) -> tuple[dict[str, Any], ...]:
@@ -407,6 +530,7 @@ def _build_init_tasks(
     profile: Mapping[str, Any] | None = None,
     context: ContextInventory | None = None,
     allow_em_dash: bool = False,
+    document_kind: str = "paper",
 ) -> list[WritingTask]:
     profile = profile or DEPTH_PROFILES[DEFAULT_DEPTH]
     tasks: list[WritingTask] = [
@@ -455,7 +579,7 @@ def _build_init_tasks(
                 else (),
             )
         )
-    if "Related Work" not in sections:
+    if "Related Work" not in sections and document_kind != "thesis":
         tasks.append(
             WritingTask(
                 task_id="section-related-work",
@@ -658,10 +782,13 @@ def build_tasks(
     if payload.get("tasks_only") is False:
         return ()
     allow_em_dash = _as_bool(payload.get("allow_em_dash"), default=False)
+    document_kind = _document_kind(payload)
     requested = payload.get("sections")
     sections: list[str]
     if isinstance(requested, Sequence) and not isinstance(requested, str | bytes):
         sections = [str(item).strip() for item in requested if str(item).strip()]
+    elif document_kind == "thesis":
+        sections = list(THESIS_DEFAULT_SECTIONS)
     else:
         sections = list(DEFAULT_SECTIONS)
     skip_experimental = _as_bool(
@@ -703,6 +830,7 @@ def build_tasks(
                 profile=profile,
                 context=context,
                 allow_em_dash=allow_em_dash,
+                document_kind=document_kind,
             )
         )
     if "evidence" in enabled:
@@ -727,9 +855,10 @@ def build_tasks(
             )
         )
     if "refine" in enabled:
+        refine_source = THESIS_BARE_SECTIONS if document_kind == "thesis" else REFINE_SECTIONS
         refine_sections = [
             section
-            for section in REFINE_SECTIONS
+            for section in refine_source
             if section not in EXPERIMENTAL_SECTIONS or not skip_experimental
         ]
         tasks.extend(
@@ -1011,6 +1140,8 @@ def build_writing_pack(
         "tasks": [task.to_dict() for task in tasks],
         "writer": "ai-harness",
         "provider_calls": 0,
+        "document_kind": _document_kind(payload),
+        "thesis_profile": _thesis_profile(payload),
     }
     digest = hashlib.sha256(_canonical(plan_core).encode("utf-8")).hexdigest()
     plan = {
@@ -1104,6 +1235,8 @@ def build_writing_pack(
         context_signals=context.signals() if context.sources else {},
         depth=depth,
         depth_profile=depth_profile,
+        document_kind=_document_kind(payload),
+        thesis_profile=_thesis_profile(payload),
     )
 
 
@@ -1123,6 +1256,79 @@ def _read_bibliography(root: Path, payload: Mapping[str, Any]) -> str:
 
 
 def skeleton_document(title: str, protected_body: str = "") -> str:
+    return _skeleton(title, protected_body)
+
+
+def _thesis_skeleton(
+    title: str,
+    *,
+    thesis_type: str = "thesis",
+    protected_body: str = "",
+) -> str:
+    """Generic thesis skeleton (document_kind="thesis").
+
+    The structure is intentionally institution/language agnostic: front matter,
+    chapter headings, and a generic bibliography. It generalises from common
+    thesis conventions (illustrated by the Telkom S2 example the user supplied)
+    without depending on any single template.
+    """
+
+    safe_title = str(title or "").strip() or "Judul Tesis"
+    from .protected_blocks import PROTECTED_END, PROTECTED_START
+
+    protected = (
+        f"{PROTECTED_START}\n"
+        f"{protected_body or '% Data/eksperimen yang disediakan penulis tetap tidak berubah.'}\n"
+        f"{PROTECTED_END}\n"
+    )
+    chapter_block = "\n".join(
+        f"\\chapter{{{name}}}\\label{{ch:{_slug(name)}}}\n% TODO(agent): section-{_slug(name)}"
+        for name in THESIS_BARE_SECTIONS
+    )
+    type_note = {
+        "skripsi": "Skripsi (Sarjana)",
+        "tesis": "Tesis (Magister)",
+        "disertasi": "Disertasi (Doktor)",
+    }.get(thesis_type, "Tesis")
+    return (
+        "\\documentclass[12pt]{report}\n"
+        "\\usepackage[T1]{fontenc}\n"
+        "\\usepackage[indonesian]{babel}\n"
+        "\\usepackage{graphicx}\n"
+        "\\title{" + safe_title + "}\n"
+        "\\author{}\n"
+        "\\date{}\n"
+        "\\begin{document}\n"
+        "\\begin{titlepage}\n"
+        f"% {type_note} -- judul, nama penulis, dan lembar pengesahan diisi sesuai pedoman kampus.\n"
+        "\\maketitle\n"
+        "\\end{titlepage}\n"
+        "\\begin{abstract}\n"
+        "% TODO(agent): abstract\n"
+        "\\end{abstract}\n"
+        "\\tableofcontents\n"
+        "\\listoffigures\n"
+        "\\listoftables\n"
+        + chapter_block
+        + "\n"
+        + protected
+        + "\\bibliographystyle{plain}\n"
+        "\\bibliography{references}\n"
+        "\\end{document}\n"
+    )
+
+
+def skeleton_document_kind(
+    title: str,
+    *,
+    document_kind: str = "paper",
+    thesis_type: str = "thesis",
+    protected_body: str = "",
+) -> str:
+    """Dispatch skeleton by document kind; thesis uses the chapter scaffold."""
+
+    if _document_kind({"document_kind": document_kind}) == "thesis":
+        return _thesis_skeleton(title, thesis_type=thesis_type, protected_body=protected_body)
     return _skeleton(title, protected_body)
 
 

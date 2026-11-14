@@ -10,8 +10,11 @@ from paperassist.context_inventory import inventory_from_payload
 from paperassist.writing_pack import (
     DEFAULT_DEPTH,
     DEPTH_PROFILES,
+    THESIS_BARE_SECTIONS,
+    THESIS_DEFAULT_SECTIONS,
     build_tasks,
     build_writing_pack,
+    skeleton_document_kind,
 )
 
 MAIN_TEX = (
@@ -232,6 +235,119 @@ def test_min_words_override(tmp_path):
         original_text=MAIN_TEX,
     )
     assert pack.to_dict()["depth_profile"]["min_words_per_section"] == 1200
+
+
+def test_thesis_mode_uses_generic_thesis_chapters():
+    tasks = build_tasks(
+        {"document_kind": "thesis", "phases": ["init"]},
+        target="main.tex",
+        allowed_keys=("k1",),
+        reference_count=1,
+    )
+    ids = task_ids(tasks)
+    assert "section-pendahuluan" in ids
+    assert "section-tinjauan-pustaka" in ids
+    assert "section-metodologi-penelitian" in ids
+    assert "section-hasil-dan-pembahasan" in ids
+    assert "section-kesimpulan-dan-saran" in ids
+    assert "section-introduction" not in ids
+
+
+def test_thesis_mode_can_be_overridden_with_custom_sections():
+    tasks = build_tasks(
+        {
+            "document_kind": "thesis",
+            "sections": ["Latar Belakang", "Analisis Sistem"],
+            "phases": ["init"],
+        },
+        target="main.tex",
+        allowed_keys=(),
+        reference_count=0,
+    )
+    ids = task_ids(tasks)
+    assert "section-latar-belakang" in ids
+    assert "section-analisis-sistem" in ids
+    assert "section-pendahuluan" not in ids
+
+
+def test_thesis_refine_uses_thesis_chapters():
+    tasks = build_tasks(
+        {"document_kind": "thesis", "phases": ["refine"]},
+        target="main.tex",
+        allowed_keys=(),
+        reference_count=0,
+    )
+    ids = task_ids(tasks)
+    assert "refine-pendahuluan" in ids
+    assert "refine-tinjauan-pustaka" in ids
+    assert "refine-introduction" not in ids
+
+
+def test_thesis_skeleton_is_generic_chapter_scaffold():
+    skeleton = skeleton_document_kind(
+        "Judul Uji", document_kind="thesis", thesis_type="tesis"
+    )
+    assert "\\documentclass[12pt]{report}" in skeleton
+    assert "\\tableofcontents" in skeleton
+    for chapter in THESIS_BARE_SECTIONS:
+        assert f"\\chapter{{{chapter}}}" in skeleton
+    assert "\\section{Introduction}" not in skeleton
+    assert "Telkom" not in skeleton
+    assert "MCP" not in skeleton
+
+
+def test_paper_mode_is_unchanged():
+    skeleton = skeleton_document_kind("Judul Uji", document_kind="paper")
+    assert "\\documentclass{article}" in skeleton
+    assert "\\section{Introduction}" in skeleton
+    assert "\\chapter{" not in skeleton
+
+
+def test_thesis_profile_defaults_and_override(tmp_path):
+    make_workspace(tmp_path)
+    default_pack = build_writing_pack(
+        tmp_path,
+        run_id="run-t1",
+        payload={"document_kind": "thesis", "phases": ["init"]},
+        target_path="main.tex",
+        original_text=MAIN_TEX,
+    )
+    profile = default_pack.to_dict()["thesis_profile"]
+    assert profile["documentclass"] == "report"
+    assert profile["front_matter"]["table_of_contents"] is True
+
+    custom_pack = build_writing_pack(
+        tmp_path,
+        run_id="run-t2",
+        payload={
+            "document_kind": "thesis",
+            "thesis_profile": {
+                "documentclass": "book",
+                "language": "english",
+                "front_matter": {"list_of_figures": False},
+            },
+            "phases": ["init"],
+        },
+        target_path="main.tex",
+        original_text=MAIN_TEX,
+    )
+    custom = custom_pack.to_dict()["thesis_profile"]
+    assert custom["documentclass"] == "book"
+    assert custom["language"] == "english"
+    assert custom["front_matter"]["list_of_figures"] is False
+    assert custom["front_matter"]["table_of_contents"] is True
+
+
+def test_paper_pack_reports_paper_kind(tmp_path):
+    make_workspace(tmp_path)
+    pack = build_writing_pack(
+        tmp_path,
+        run_id="run-p1",
+        payload={"phases": ["init"]},
+        target_path="main.tex",
+        original_text=MAIN_TEX,
+    )
+    assert pack.to_dict()["document_kind"] == "paper"
 
 
 def test_context_paths_must_stay_in_workspace(tmp_path):

@@ -127,6 +127,37 @@ writing_import { "workspace": "<ws>", "run_id": "<id>", "import": "draft.tex" }
 > `writing_import`, dst. dipanggil assistant (OpenClaude / Claude Code)
 > melalui MCP server `paperassist` yang sudah aktif sebagai plugin.
 
+## Mode tesis (skripsi / tesis / disertasi)
+
+Mode ini **generik**: PDF tesis yang dipelajari hanya dipakai sebagai referensi
+untuk konvensi umum (front matter, bab ber-\chapter, daftar isi/gambar/tabel,
+sistematika Pendahuluan → Tinjauan Pustaka → Metodologi → Hasil dan Pembahasan →
+Kesimpulan dan Saran). Tidak ada nama kampus, judul, atau topik yang di-hardcode.
+
+Aktifkan lewat `document_kind` pada `writing_pack`:
+
+```text
+writing_pack {
+  "workspace": "<ws>", "topic": "...", "title": "...",
+  "document_kind": "thesis", "thesis_type": "tesis"
+}
+```
+
+Alias yang diterima: `thesis`, `tesis`, `dissertation`, `disertasi`, `skripsi`.
+
+Perilaku mode tesis:
+
+- Task `section-*` memakai bab generik di atas; `Related Work` khas paper tidak
+  dipaksakan. `sections` dapat mengganti seluruh daftar bab sesuai pedoman kampus.
+- Skeleton LaTeX memakai `report`/`\chapter`, titlepage, abstract,
+  `\tableofcontents`, `\listoffigures`, `\listoftables`, dan bibliografi.
+- `plan.json` memuat `document_kind` dan `thesis_profile` (kelas dokumen, bahasa,
+  style bibliografi, dan flag front matter) yang **bisa di-override** lewat
+  `thesis_profile`, mis. `{"documentclass":"book","language":"english"}`.
+
+Mode paper tetap default (`document_kind: "paper"`), sehingga alur lama tidak
+berubah.
+
 ## Research OS pipeline
 
 ### Model konseptual
