@@ -91,13 +91,24 @@ Plugin ini dideklarasikan oleh `.claude-plugin/plugin.json`. Skill dibaca
 dari `skills/`, dan MCP server `paperassist` berada di
 `mcp_servers/stdio.py` (JSON-RPC over stdio).
 
-MCP tools (15):
+MCP tools (16):
 
 | Group | Tools |
 |---|---|
 | `paperassist` (planning & packs) | `harness_status`, `pack_scaffold`, `pack_plan`, `pack_task`, `pack_import` |
-| `paperassist` (Research OS) | `corpus_bind`, `claim_audit`, `quality_score`, `research_os`, `improvement_verify` |
+| `paperassist` (Research OS) | `corpus_bind`, `claim_audit`, `quality_score`, `research_os`, `improvement_verify`, `journal_lookup` |
 | `writing` | `writing_pack`, `writing_plan`, `writing_task`, `writing_import`, `writing_patch` |
+
+`journal_lookup` returns curated, citable format references (Indonesian
+SINTA/JTIM and international Elsevier/IEEE/Springer/ACM), or detects plausible
+profiles from a manuscript's `\documentclass`. List all profiles with no
+arguments, filter with `scope`, search with `query`, or detect with
+`manuscript_path`.
+
+**Why it matters for the abstract:** the stock `article` class typesets the
+abstract with `\small` inside a `quotation` (narrower than `\textwidth`). Many
+journal templates redefine that, so "the abstract must match body width" is a
+template rule, not a LaTeX default.
 
 ## Writing a paper: AI Harness &rarr; Paper-Assist
 

@@ -28,6 +28,13 @@ from paperassist.corpus_binder import (
 )
 from paperassist.harness import harness_status
 from paperassist.improvement_loop import format_verdict, revision_plan, verify_revision
+from paperassist.journal_profiles import (
+    PROFILE_SCHEMA,
+    detect_profiles,
+    format_profile_report,
+    list_profiles,
+    lookup_profiles,
+)
 from paperassist.manuscript_quality import format_quality_report, score_manuscript
 from paperassist.provenance_audit import extract_locators
 from paperassist.research_os import read_workspace_text, run_research_os
@@ -183,6 +190,15 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                     "grounding, unsupported assertions, citations or required sections."
                 ),
             ),
+            ToolSpec(
+                name="journal_lookup",
+                description=(
+                    "Look up curated journal/profile format references (Indonesian "
+                    "SINTA/JTIM and international Elsevier/IEEE/Springer/ACM), or "
+                    "detect plausible profiles from LaTeX source; returns abstract "
+                    "layout notes and citable sources."
+                ),
+            ),
         ]
 
     def resources(self) -> list[ResourceSpec]:
@@ -194,6 +210,10 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             ResourceSpec(
                 uri="paperassist://task",
                 description="Pack task (requires kind, run_id and task_id).",
+            ),
+            ResourceSpec(
+                uri="paperassist://journal-profiles",
+                description="Curated journal format profiles (Indonesia and international).",
             ),
         ]
 
@@ -405,16 +425,63 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             "markdown": format_verdict(verdict),
         }
 
+    def journal_lookup(
+        self,
+        query: str | None = None,
+        scope: str | None = None,
+        manuscript_path: str | None = None,
+        workspace: str | None = None,
+    ) -> dict[str, Any]:
+        if manuscript_path:
+            if not workspace:
+                raise ValueError("workspace is required when manuscript_path is given")
+            text = read_workspace_text(
+                _workspace(workspace), manuscript_path, what="manuscript"
+            )
+            result = detect_profiles(text)
+        elif query:
+            result = lookup_profiles(query)
+        else:
+            items = list_profiles(scope)
+            result = {
+                "schema": PROFILE_SCHEMA,
+                "scope": scope or "all",
+                "count": len(items),
+                "profiles": items,
+            }
+        return {
+            "status": "ok",
+            "provider_calls": 0,
+            "result": result,
+            "markdown": format_profile_report(result),
+        }
+
     def read_resource(
         self,
         resource_uri: str,
         *,
-        workspace: str,
-        kind: str,
-        run_id: str,
+        workspace: str | None = None,
+        kind: str | None = None,
+        run_id: str | None = None,
         task_id: str | None = None,
+        scope: str | None = None,
         **_: Any,
     ) -> dict[str, Any]:
+        if resource_uri == "paperassist://journal-profiles":
+            items = list_profiles(scope)
+            result = {
+                "schema": PROFILE_SCHEMA,
+                "scope": scope or "all",
+                "count": len(items),
+                "profiles": items,
+            }
+            return {
+                "status": "ok",
+                "result": result,
+                "markdown": format_profile_report(result),
+            }
+        if workspace is None or kind is None or run_id is None:
+            raise ValueError("pack/task resources require workspace, kind, and run_id")
         root = _workspace(workspace)
         normalized_kind = _kind(kind)
         if resource_uri == "paperassist://pack":

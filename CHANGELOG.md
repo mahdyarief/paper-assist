@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.0.1
+
+- Added `journal_lookup` MCP tool and `paperassist://journal-profiles` resource:
+  curated, citable format references for Indonesian (SINTA/JTIM) and
+  international (Elsevier/IEEE/Springer Nature/ACM) journals, plus heuristic
+  `\documentclass` detection. Includes explicit note that stock `article`
+  abstracts use `\small` + `quotation` (inset), not full `\textwidth`.
+- Added `paperassist/journal_profiles.py` and focused tests.
+
 ## 3.0.0
 
 - Added the unified Research OS runtime, typed agents, profiles, approvals,
