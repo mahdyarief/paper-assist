@@ -356,14 +356,43 @@ def _thesis_profile(payload: Mapping[str, Any]) -> dict[str, Any]:
         "list_of_figures": bool(front_user.get("list_of_figures", True)),
         "list_of_tables": bool(front_user.get("list_of_tables", True)),
     }
-    return {
-        "documentclass": str(user.get("documentclass") or "report"),
-        "class_options": str(user.get("class_options") or "12pt"),
+
+    # Optional: seed typography from a curated thesis profile (e.g. Telkom).
+    # Explicit payload values always win over the profile defaults.
+    preset: dict[str, Any] = {}
+    preset_id = user.get("profile_id")
+    if preset_id:
+        from paperassist.thesis_profiles import thesis_profile
+
+        p = thesis_profile(str(preset_id))
+        preset = {
+            "documentclass": p.document_class,
+            "class_options": p.class_options,
+            "font": p.body_font,
+            "font_size_pt": p.body_font_size_pt,
+            "line_spacing": p.line_spacing,
+            "margins_cm": dict(p.margins_cm),
+            "paper_size": p.paper_size,
+            "paragraph_indent_cm": p.paragraph_indent_cm,
+            "latex_preamble": p.latex_preamble,
+            "sources": list(p.sources),
+        }
+
+    resolved = {
+        "documentclass": str(user.get("documentclass") or preset.get("documentclass") or "report"),
+        "class_options": str(user.get("class_options") or preset.get("class_options") or "12pt"),
         "language": str(user.get("language") or "indonesian"),
         "bibliography_style": str(user.get("bibliography_style") or "plain"),
         "bibliography_file": str(user.get("bibliography_file") or "references"),
         "front_matter": front_matter,
+        "profile_id": str(preset_id) if preset_id else None,
     }
+    for key in ("font", "font_size_pt", "line_spacing", "margins_cm",
+                "paper_size", "paragraph_indent_cm", "latex_preamble", "sources"):
+        value = user.get(key, preset.get(key))
+        if value is not None:
+            resolved[key] = value
+    return resolved
 
 
 # Chapter -> section label used in the working skeleton. This mapping is the

@@ -38,6 +38,13 @@ from paperassist.journal_profiles import (
 from paperassist.manuscript_quality import format_quality_report, score_manuscript
 from paperassist.provenance_audit import extract_locators
 from paperassist.research_os import read_workspace_text, run_research_os
+from paperassist.thesis_profiles import (
+    THESIS_PROFILE_SCHEMA,
+    detect_thesis_profiles,
+    format_thesis_profile_report,
+    list_thesis_profiles,
+    lookup_thesis_profiles,
+)
 
 _KINDS = (KIND_IDEATION, KIND_REVIEW, KIND_EXPERIMENT)
 _BUILDERS = {
@@ -199,6 +206,16 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                     "layout notes and citable sources."
                 ),
             ),
+            ToolSpec(
+                name="thesis_lookup",
+                description=(
+                    "Look up curated thesis/dissertation formatting profiles "
+                    "(Indonesian campus guidelines such as Telkom, plus generic "
+                    "skripsi/tesis baselines), or detect plausible profiles from "
+                    "LaTeX source; returns margin/font/spacing/pagination rules "
+                    "and a ready-to-use LaTeX preamble."
+                ),
+            ),
         ]
 
     def resources(self) -> list[ResourceSpec]:
@@ -214,6 +231,10 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             ResourceSpec(
                 uri="paperassist://journal-profiles",
                 description="Curated journal format profiles (Indonesia and international).",
+            ),
+            ResourceSpec(
+                uri="paperassist://thesis-profiles",
+                description="Curated thesis/dissertation formatting profiles.",
             ),
         ]
 
@@ -456,6 +477,37 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             "markdown": format_profile_report(result),
         }
 
+    def thesis_lookup(
+        self,
+        query: str | None = None,
+        scope: str | None = None,
+        manuscript_path: str | None = None,
+        workspace: str | None = None,
+    ) -> dict[str, Any]:
+        if manuscript_path:
+            if not workspace:
+                raise ValueError("workspace is required when manuscript_path is given")
+            text = read_workspace_text(
+                _workspace(workspace), manuscript_path, what="manuscript"
+            )
+            result = detect_thesis_profiles(text)
+        elif query:
+            result = lookup_thesis_profiles(query)
+        else:
+            items = list_thesis_profiles(scope)
+            result = {
+                "schema": THESIS_PROFILE_SCHEMA,
+                "scope": scope or "all",
+                "count": len(items),
+                "profiles": items,
+            }
+        return {
+            "status": "ok",
+            "provider_calls": 0,
+            "result": result,
+            "markdown": format_thesis_profile_report(result),
+        }
+
     def read_resource(
         self,
         resource_uri: str,
@@ -479,6 +531,19 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                 "status": "ok",
                 "result": result,
                 "markdown": format_profile_report(result),
+            }
+        if resource_uri == "paperassist://thesis-profiles":
+            items = list_thesis_profiles(scope)
+            result = {
+                "schema": THESIS_PROFILE_SCHEMA,
+                "scope": scope or "all",
+                "count": len(items),
+                "profiles": items,
+            }
+            return {
+                "status": "ok",
+                "result": result,
+                "markdown": format_thesis_profile_report(result),
             }
         if workspace is None or kind is None or run_id is None:
             raise ValueError("pack/task resources require workspace, kind, and run_id")

@@ -96,7 +96,7 @@ MCP tools (16):
 | Group | Tools |
 |---|---|
 | `paperassist` (planning & packs) | `harness_status`, `pack_scaffold`, `pack_plan`, `pack_task`, `pack_import` |
-| `paperassist` (Research OS) | `corpus_bind`, `claim_audit`, `quality_score`, `research_os`, `improvement_verify`, `journal_lookup` |
+| `paperassist` (Research OS) | `corpus_bind`, `claim_audit`, `quality_score`, `research_os`, `improvement_verify`, `journal_lookup`, `thesis_lookup` |
 | `writing` | `writing_pack`, `writing_plan`, `writing_task`, `writing_import`, `writing_patch` |
 
 `journal_lookup` returns curated, citable format references (Indonesian
@@ -109,6 +109,28 @@ arguments, filter with `scope`, search with `query`, or detect with
 abstract with `\small` inside a `quotation` (narrower than `\textwidth`). Many
 journal templates redefine that, so "the abstract must match body width" is a
 template rule, not a LaTeX default.
+
+`thesis_lookup` is the thesis/dissertation counterpart: curated formatting
+profiles with font, size, line spacing, margins, paper size, pagination,
+abstract rules, and a ready-to-use LaTeX preamble. Built-in profiles:
+
+| id | scope | key formatting |
+|---|---|---|
+| `id-telkom-tesis` | Indonesia (Telkom University) | TNR 12 pt, 1.5 spacing, A4, margins 4/3/2.5/2.5 cm |
+| `id-thesis-generic` | Indonesia (campus-agnostic) | same Indonesian baseline, no campus claim |
+| `intl-thesis-generic` | International | TNR 12 pt, double spacing, 3/2.5/2.5/2.5 cm |
+
+List with no arguments, filter with `scope`, search with `query`, or detect with
+`manuscript_path`. A campus profile is only detected when the institution is
+named in the source, so a bare `\documentclass{report}` falls back to the
+generic baseline. Seed a writing pack with it via
+`thesis_profile: {profile_id: "id-telkom-tesis"}`; explicit payload fields
+still override the preset.
+
+**Scope caveat:** the Telkom numbers follow the published *Panduan Penulisan
+Tesis* (Magister Manajemen). Faculties and study programmes publish their own
+handbooks, and LaTeX is not mandatory at Telkom — confirm with the supervisor
+before submission.
 
 ## Writing a paper: AI Harness &rarr; Paper-Assist
 
