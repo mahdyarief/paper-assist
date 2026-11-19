@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Added an advisory `formulaic_prose` quality dimension that flags generic
+  Indonesian phrasing and unusually uniform sentence rhythm. It is a review
+  signal, not an authorship detector, and does not penalise standard academic
+  vocabulary.
+- Added default Indonesian anti-slop guidance to the `write-section`,
+  `refine-section`, and `de-aigc-rewrite` skills and to generated section
+  instructions, without changing any claims, citations, or numbers.
+
 ## 4.0.1
 
 - Added `journal_lookup` MCP tool and `paperassist://journal-profiles` resource:

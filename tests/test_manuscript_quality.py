@@ -301,6 +301,40 @@ def test_synthesis_must_scale_with_the_corpus():
     assert any("included studies" in f.message for f in depth.findings)
 
 
+def test_formulaic_prose_is_flagged_without_claiming_authorship():
+    text = GOOD.replace(
+        "The field now needs a measure of addressability.",
+        "Tidak dapat dipungkiri bahwa hal ini memainkan peran penting. "
+        "Perlu diingat bahwa topik ini sangat penting.",
+    )
+    report = score_manuscript(text)
+    dimension = report.dimension("formulaic_prose")
+    assert dimension is not None
+    assert dimension.measurements["formulaic_phrase_count"] >= 3
+    assert dimension.measurements["is_authorship_detector"] is False
+    assert dimension.score < 1.0
+
+
+def test_formulaic_prose_keeps_ordinary_academic_terms():
+    text = GOOD.replace(
+        "The field now needs a measure of addressability.",
+        "Literatur menunjukkan hasil yang signifikan dan metode ini penting "
+        "bagi penelitian lanjutan.",
+    )
+    dimension = score_manuscript(text).dimension("formulaic_prose")
+    assert dimension.measurements["formulaic_phrases"] == []
+    assert dimension.score == 1.0
+
+
+def test_uniform_sentence_rhythm_is_an_informational_signal():
+    uniform = " ".join(["Data ini menunjukkan pola yang sama."] * 8)
+    text = f"\\begin{{document}}\n{uniform}\n\\end{{document}}\n"
+    dimension = score_manuscript(text).dimension("formulaic_prose")
+    assert dimension.measurements["formulaic_phrase_count"] == 0
+    assert dimension.measurements["uniform_sentence_rhythm"] is True
+    assert all(f.severity == "info" for f in dimension.findings)
+
+
 def test_corpus_floor_does_not_reward_a_short_review():
     large = CorpusBinding(
         records=tuple(

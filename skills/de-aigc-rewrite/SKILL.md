@@ -20,6 +20,20 @@ and structure intact.
 - `rewritten_text`
 - `style_notes`
 
+## Editorial policy for Indonesian academic prose
+
+- Replace generic openers and filler with a paper-specific claim: for example,
+  "dalam dunia yang semakin...", "di era digital", "tidak dapat dipungkiri",
+  "perlu diingat bahwa", "memainkan peran penting",
+  "secara komprehensif dapat disimpulkan". Keep one only when the surrounding
+  evidence makes the wording genuinely precise.
+- Vary sentence structure where it improves clarity; do not force an
+  artificial short/long pattern.
+- Keep standard academic and technical vocabulary (including "signifikan",
+  "literatur", "komprehensif") when it is the precise term.
+- No conversational contractions, blog-style asides, or Markdown formatting
+  inside LaTeX prose.
+
 ## Boundaries
 
 This skill does:

@@ -21,6 +21,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from .anti_ai_style import detect_formulaic_phrases, is_uniform_rhythm, sentence_length_cv
 from .claim_ledger import ClaimLedger
 from .corpus_binder import CorpusBinding
 
@@ -38,9 +39,10 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "evidence": 0.14,
     "method_rigour": 0.12,
     "limitations": 0.06,
-    "prose_style": 0.05,
-    "tables_figures": 0.04,
+    "prose_style": 0.04,
+    "tables_figures": 0.03,
     "readability": 0.04,
+    "formulaic_prose": 0.02,
 }
 
 # Analytic prose a review needs per included study before it can report what
@@ -809,6 +811,64 @@ def _dimension_limitations(text: str) -> Dimension:
     )
 
 
+def _dimension_formulaic_prose(text: str) -> Dimension:
+    prose = _NON_PROSE_RE.sub(lambda m: " " * len(m.group(0)), text)
+    prose = _ABSTRACT_RE.sub(lambda m: m.group(1), prose)
+    prose = _SECTION_RE.sub(lambda m: " " * len(m.group(0)), prose)
+    prose = _strip_latex(prose)
+
+    hits = detect_formulaic_phrases(prose)
+    rhythm_cv = sentence_length_cv(prose)
+    uniform = is_uniform_rhythm(prose)
+    findings: list[Finding] = []
+
+    if hits:
+        examples = ", ".join(f'“{hit.phrase}”' for hit in hits[:3])
+        findings.append(
+            Finding(
+                dimension="formulaic_prose",
+                severity="warning" if len(hits) < 4 else "critical",
+                message=(
+                    f"{len(hits)} formulaic phrase(s) for editorial review: {examples}"
+                ),
+                remedy=(
+                    "replace only phrases that add no paper-specific meaning; "
+                    "retain standard technical terminology"
+                ),
+            )
+        )
+    if uniform:
+        findings.append(
+            Finding(
+                dimension="formulaic_prose",
+                severity="info",
+                message=(
+                    "sentence lengths are unusually uniform "
+                    f"(coefficient of variation {rhythm_cv:.2f})"
+                ),
+                remedy=(
+                    "review sentence rhythm where it improves readability; "
+                    "do not vary sentence length mechanically"
+                ),
+            )
+        )
+
+    score = _clamp(1.0 - min(0.6, len(hits) * 0.12) - (0.08 if uniform else 0.0))
+    return Dimension(
+        name="formulaic_prose",
+        score=score,
+        weight=DEFAULT_WEIGHTS["formulaic_prose"],
+        measurements={
+            "formulaic_phrase_count": len(hits),
+            "formulaic_phrases": [hit.to_dict() for hit in hits],
+            "sentence_length_cv": round(rhythm_cv, 4),
+            "uniform_sentence_rhythm": uniform,
+            "is_authorship_detector": False,
+        },
+        findings=tuple(findings),
+    )
+
+
 def _dimension_tables_figures(text: str) -> Dimension:
     findings: list[Finding] = []
     tables = len(_TABLE_RE.findall(text))
@@ -1022,7 +1082,7 @@ def score_manuscript(
     weights: Mapping[str, float] | None = None,
     corpus_size: int | None = None,
 ) -> QualityReport:
-    """Score a manuscript across ten deterministic dimensions.
+    """Score a manuscript across twelve deterministic dimensions.
 
     ``corpus_size`` is how many studies the manuscript had to synthesise. A
     binding supplies it when one exists; a caller holding extraction records
@@ -1073,6 +1133,7 @@ def score_manuscript(
         _dimension_prose_style(text, allow_em_dash=allow_em_dash),
         _dimension_tables_figures(text),
         _dimension_readability(text),
+        _dimension_formulaic_prose(text),
     )
 
     weighted = sum(
