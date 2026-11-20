@@ -233,10 +233,10 @@ def _source_excerpts(references_payload: Mapping[str, Any] | None) -> dict[str, 
     key_sources = references_payload.get("key_sources")
     if isinstance(key_sources, Mapping):
         resolved: dict[str, str] = {}
-        for key, source_id in key_sources.items():
-            body = indexed.get(str(source_id))
-            if body is not None:
-                resolved[str(key)] = body
+        for key, target_id in key_sources.items():
+            matched = indexed.get(str(target_id))
+            if matched is not None:
+                resolved[str(key)] = matched
         return resolved
     return indexed
 
@@ -272,15 +272,15 @@ def audit(
     unverified: list[str] = []
     grounded = 0
     for key in unique_keys:
-        locator = by_key.get(key)
-        if locator is None or locator.quote is None:
+        found = by_key.get(key)
+        if found is None or found.quote is None:
             continue
-        needle = _normalize(locator.quote)
+        needle = _normalize(found.quote)
         if not needle:
             continue
         candidates: list[str] = []
-        if locator.source:
-            match = excerpts.get(locator.source)
+        if found.source:
+            match = excerpts.get(found.source)
             if match is not None:
                 candidates.append(match)
         elif key in excerpts:

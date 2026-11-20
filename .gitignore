@@ -29,3 +29,7 @@ remote.yaml
 .DS_Store
 
 .claude/
+
+# trail/graft code-map cache
+graft/
+.trail/cache/

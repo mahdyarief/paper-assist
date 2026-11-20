@@ -7,6 +7,7 @@ Uses POSIX ``flock`` or the Windows CRT byte-range lock.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -117,7 +118,11 @@ def acquire_run_lock(
                     f"Timeout waiting for run lock: {lock_path} (timeout={timeout}s)"
                 ) from None
             if verbose and not waiting_printed:
-                print(f"[LOCK] waiting for run lock: {lock_path} (timeout={timeout}s)")
+                # stderr, never stdout: stdout carries the MCP JSON-RPC stream.
+                print(
+                    f"[LOCK] waiting for run lock: {lock_path} (timeout={timeout}s)",
+                    file=sys.stderr,
+                )
                 waiting_printed = True
             time.sleep(float(poll_interval))
 

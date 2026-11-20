@@ -29,9 +29,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from .provenance_audit import Locator, extract_locators, load_locators_payload
@@ -593,12 +592,12 @@ def _record_value_index(
                     if not str(field).startswith("_")
                     and (str(field).endswith("_total") or str(field) == "total")
                 ]
-                totals = [total for total in totals if total]
+                denominators = [total for total in totals if total]
                 for number in numbers:
                     register(_UNIT_COUNT_ONLY, number)
                     # A count document that names its own denominator supports
                     # the proportion of each count over it.
-                    for total in totals:
+                    for total in denominators:
                         if 0 < number <= total:
                             register(_UNIT_PERCENT, number / total * 100)
             continue
@@ -630,9 +629,9 @@ def _record_value_index(
                     if stated:
                         field_stated[name] = field_stated.get(name, 0) + 1
                 else:
-                    number = as_number(value)
-                    if number is not None:
-                        numeric_fields.setdefault(name, []).append(number)
+                    parsed = as_number(value)
+                    if parsed is not None:
+                        numeric_fields.setdefault(name, []).append(parsed)
                         field_stated[name] = field_stated.get(name, 0) + 1
                         field_parsed[name] = field_parsed.get(name, 0) + 1
                     elif isinstance(value, str) and value.strip():
@@ -667,13 +666,13 @@ def _record_value_index(
                 continue
             for member in bucket:
                 for numeric_field in numeric_fields:
-                    subset = [
+                    raw_subset = [
                         as_number(record.get(numeric_field))
                         for record in group
-                        if isinstance(record.get(field), str)
-                        and record.get(field).strip() == member
+                        if isinstance(group_label := record.get(field), str)
+                        and group_label.strip() == member
                     ]
-                    subset = [value for value in subset if value is not None]
+                    subset = [value for value in raw_subset if value is not None]
                     if subset:
                         register(_UNIT_VALUE, sum(subset) / len(subset))
 
@@ -691,10 +690,10 @@ def _record_value_index(
     # that same name, not by any number that happens to equal it. Registering
     # these as plain counts would let a rubric field named "total" confirm an
     # unrelated "15 hari", which is the laundering this model exists to stop.
-    for field, numbers in named.items():
+    for field, named_numbers in named.items():
         if not field:
             continue
-        for number in numbers:
+        for number in named_numbers:
             if float(number).is_integer():
                 values.add(f"{_UNIT_FIELD}{field}:{int(number)}")
             values.add(f"{_UNIT_FIELD}{field}:{number:g}")

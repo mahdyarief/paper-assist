@@ -220,7 +220,7 @@ def apply_patch(
         source_sha256=source_sha256,
         protected_sha256=after_hash,
         request_sha256=hashlib.sha256(
-            f"{source_sha256}\x1f{normalized_anchor}".encode("utf-8")
+            f"{source_sha256}\x1f{normalized_anchor}".encode()
         ).hexdigest(),
         response_sha256=hashlib.sha256(replacement.encode("utf-8")).hexdigest(),
         anchor=normalized_anchor[:512],

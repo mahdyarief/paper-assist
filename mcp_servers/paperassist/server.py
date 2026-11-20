@@ -5,7 +5,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mcp_servers.base import BasePaperAssistMcpServer, ResourceSpec, ToolSpec
+from mcp_servers.base import (
+    BasePaperAssistMcpServer,
+    ResourceSpec,
+    ToolSpec,
+    reject_unknown_keys,
+)
 from paperassist.agent_packs import (
     KIND_EXPERIMENT,
     KIND_IDEATION,
@@ -80,6 +85,7 @@ _RESEARCH_KEYS = frozenset(
         "records",
         "records_path",
         "records_paths",
+        "ris_paths",
         "extraction_path",
         "fulltext_root",
         "pdf_root",
@@ -144,9 +150,10 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                 name="pack_scaffold",
                 description=(
                     "Build an ideation, review or experiment task pack (plan, brief, "
-                    "tasks, editable target) for the harness to execute."
+                    "tasks, editable target) for the harness to execute. kind is "
+                    "ideation, review or experiment; writing packs use writing_pack."
                 ),
-                requires_workspace_lock=True,
+                payload_keys=tuple(sorted(_INPUT_KEYS)),
             ),
             ToolSpec(name="pack_plan", description="Read one pack plan."),
             ToolSpec(name="pack_task", description="Read one task file from a pack."),
@@ -156,7 +163,6 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                     "Validate a harness-produced JSON result against the pack gates "
                     "and record it in the workspace."
                 ),
-                requires_workspace_lock=True,
             ),
             ToolSpec(
                 name="corpus_bind",
@@ -179,7 +185,8 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                 description=(
                     "Score a manuscript across structure, abstract, depth, citations, "
                     "provenance, evidence, method rigour, limitations, prose style, "
-                    "figures and readability; returns a grade and blocking findings."
+                    "figures, readability and (advisory) formulaic prose; returns a "
+                    "grade and blocking findings."
                 ),
             ),
             ToolSpec(
@@ -188,7 +195,7 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                     "Run the full pipeline (bind, audit, score, separate, plan) and "
                     "write narrative.jsonl and evidence.jsonl as distinct artifacts."
                 ),
-                requires_workspace_lock=True,
+                payload_keys=tuple(sorted(_RESEARCH_KEYS)),
             ),
             ToolSpec(
                 name="improvement_verify",
@@ -250,6 +257,7 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
     ) -> dict[str, Any]:
         root = _workspace(workspace)
         normalized_kind = _kind(kind)
+        reject_unknown_keys(payload, _INPUT_KEYS, tool="pack_scaffold")
         inputs = {
             key: value
             for key, value in payload.items()
@@ -399,6 +407,7 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
 
     def research_os(self, workspace: str, **payload: Any) -> dict[str, Any]:
         root = _workspace(workspace)
+        reject_unknown_keys(payload, _RESEARCH_KEYS, tool="research_os")
         inputs = {
             key: value
             for key, value in payload.items()

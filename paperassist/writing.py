@@ -30,9 +30,11 @@ from .protected_blocks import (
 )
 from .provenance_audit import (
     ProvenanceReport,
-    audit as audit_provenance,
     extract_locators,
     load_locators_payload,
+)
+from .provenance_audit import (
+    audit as audit_provenance,
 )
 from .references import DEFAULT_REFERENCE_BUDGET_BYTES
 from .writing_pack import (
@@ -42,7 +44,6 @@ from .writing_pack import (
     WritingPackError,
     build_writing_pack,
     pack_directory_name,
-    skeleton_document,
     skeleton_document_kind,
 )
 
@@ -328,12 +329,13 @@ class WritingEngine:
             bibliography_keys=bibliography_keys,
         )
         provenance = self._audit_provenance(candidate, payload, run_id=run_id)
-        if provenance is not None and not provenance.passed:
-            if self._provenance_is_blocking(payload):
-                rendered = "; ".join(provenance.warnings) or "provenance audit failed"
-                raise WritingSafetyError(
-                    "provenance gate refused the draft: " + rendered
-                )
+        if (
+            provenance is not None
+            and not provenance.passed
+            and self._provenance_is_blocking(payload)
+        ):
+            rendered = "; ".join(provenance.warnings) or "provenance audit failed"
+            raise WritingSafetyError("provenance gate refused the draft: " + rendered)
         before_sha256 = protected_blocks_sha256(original)
         atomic_write_text(self.workspace, relative_path, candidate + "\n")
         written = self.workspace / relative_path

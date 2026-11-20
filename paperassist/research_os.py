@@ -53,13 +53,13 @@ from .corpus_binder import (
     parse_ris,
     render_study_catalogue,
 )
+from .improvement_loop import revision_plan
 from .manuscript_quality import (
     QualityError,
     QualityReport,
     format_quality_report,
     score_manuscript,
 )
-from .improvement_loop import revision_plan
 from .path_safety import UnsafePathError, reject_symlink_components
 from .provenance_audit import extract_locators, load_locators_payload
 from .source_coverage import SourceCoverage, audit_source_coverage, format_source_coverage
@@ -230,12 +230,11 @@ def _load_records(
     if isinstance(ris_sources, Sequence) and not isinstance(ris_sources, (str, bytes)):
         ris_records: list[dict[str, Any]] = []
         for source in ris_sources:
-            path = (workspace / str(source)).resolve()
-            if not path.is_file():
-                raise ResearchOSError(f"RIS source not found: {source}")
+            path = _resolve_source(workspace, str(source), what="RIS source")
             ris_records.extend(parse_ris(path.read_text(encoding="utf-8", errors="replace")))
         if ris_records:
-            merged, _ = enrich_records_with_ris(merged, ris_records)
+            enriched, _ = enrich_records_with_ris(merged, ris_records)
+            merged[:] = enriched
     return merged
 
 

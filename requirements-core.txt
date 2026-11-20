@@ -1,2 +1,1 @@
-requests==2.32.5
-pyyaml>=6.0,<7
+# PaperAssist core has no third-party dependencies (standard library only).

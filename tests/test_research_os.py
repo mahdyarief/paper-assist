@@ -9,6 +9,7 @@ import pytest
 from paperassist.research_os import (
     RESEARCH_OS_SCHEMA,
     ResearchOSError,
+    ResearchOSSafetyError,
     expand_includes,
     run_research_os,
 )
@@ -195,7 +196,7 @@ def test_run_id_cannot_escape_workspace(project):
 def test_target_cannot_escape_workspace(project):
     outside = project.parent / "outside.tex"
     outside.write_text(PAPER, encoding="utf-8")
-    with pytest.raises(Exception):
+    with pytest.raises(ResearchOSSafetyError):
         run_research_os(project, {"run_id": "x", "target_path": str(outside)})
 
 

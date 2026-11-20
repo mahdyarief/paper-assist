@@ -8,8 +8,9 @@ summaries, not legal substitutes for a journal's current author guidelines.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from typing import Any, Mapping
+from typing import Any
 
 PROFILE_SCHEMA = "paperassist.journal-profiles/v1"
 
@@ -216,7 +217,7 @@ PROFILES: tuple[JournalProfile, ...] = (
         publisher="Association for Computing Machinery (ACM)",
         scope="international",
         document_class="acmart",
-        template_formats=("tex"),
+        template_formats=("tex",),
         abstract_layout=(
             "Abstract/CCS concepts/keywords formatted by acmart for the chosen "
             "format (sigconf, manuscript, etc.), distinct from plain article."
@@ -319,10 +320,14 @@ def detect_profiles(text: str, *, limit: int = 10) -> dict[str, Any]:
                 if c.lower() == doc_class.lower():
                     score += 5
                     reasons.append(f"documentclass={doc_class}")
-        if doc_class and p.document_class and p.document_class.lower() == doc_class.lower():
-            if f"documentclass={doc_class}" not in reasons:
-                score += 5
-                reasons.append(f"documentclass={doc_class}")
+        if (
+            doc_class
+            and p.document_class
+            and p.document_class.lower() == doc_class.lower()
+            and f"documentclass={doc_class}" not in reasons
+        ):
+            score += 5
+            reasons.append(f"documentclass={doc_class}")
         for tok in p.match_tokens:
             if tok and tok.lower() in low:
                 score += 1

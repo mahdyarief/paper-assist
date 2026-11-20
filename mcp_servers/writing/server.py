@@ -5,8 +5,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mcp_servers.base import BasePaperAssistMcpServer, ResourceSpec, ToolSpec
+from mcp_servers.base import (
+    BasePaperAssistMcpServer,
+    ResourceSpec,
+    ToolSpec,
+    reject_unknown_keys,
+)
 from paperassist.path_safety import safe_mkdir
+from paperassist.research_os import read_workspace_text
 from paperassist.scientific_memory import ScientificMemory
 from paperassist.writing import WritingEngine
 from paperassist.writing_pack import (
@@ -78,7 +84,7 @@ class WritingMcpServer(BasePaperAssistMcpServer):
                     "Build a deterministic writing pack (plan, brief, tasks, "
                     "allowed citations) for the AI harness to execute."
                 ),
-                requires_workspace_lock=True,
+                payload_keys=_WRITING_KEYS,
             ),
             ToolSpec(name="writing_plan", description="Read a writing pack plan."),
             ToolSpec(
@@ -89,9 +95,10 @@ class WritingMcpServer(BasePaperAssistMcpServer):
                 name="writing_import",
                 description=(
                     "Verify a harness-produced .tex document against the writing "
-                    "gates and register it as a draft artifact."
+                    "gates and register it as a draft artifact. Pass draft_path or "
+                    "draft_text (draft_text wins when both are given)."
                 ),
-                requires_workspace_lock=True,
+                payload_keys=_WRITING_KEYS,
             ),
             ToolSpec(
                 name="writing_patch",
@@ -99,7 +106,6 @@ class WritingMcpServer(BasePaperAssistMcpServer):
                     "Apply an agent-supplied replacement for one unique anchor "
                     "with all protected-block and citation gates enforced."
                 ),
-                requires_workspace_lock=True,
             ),
         ]
 
@@ -122,6 +128,7 @@ class WritingMcpServer(BasePaperAssistMcpServer):
         **payload: Any,
     ) -> dict[str, Any]:
         root = _workspace_path(workspace)
+        reject_unknown_keys(payload, _WRITING_KEYS, tool="writing_pack")
         inputs = {
             key: value
             for key, value in payload.items()
@@ -169,6 +176,7 @@ class WritingMcpServer(BasePaperAssistMcpServer):
         **payload: Any,
     ) -> dict[str, Any]:
         root = _workspace_path(workspace)
+        reject_unknown_keys(payload, _WRITING_KEYS, tool="writing_import")
         plan = load_writing_plan(root, run_id=plan_run_id or run_id)
         inputs: dict[str, Any] = {
             key: value
@@ -211,10 +219,9 @@ class WritingMcpServer(BasePaperAssistMcpServer):
             )
         text = replacement
         if replacement_path:
-            candidate = root / replacement_path
-            if candidate.is_symlink() or not candidate.is_file():
-                raise ValueError("replacement_path must be a regular workspace file")
-            text = candidate.read_text(encoding="utf-8")
+            # Same containment rules as every other workspace read: no
+            # ``..`` escape, no absolute path outside, no symlink hop.
+            text = read_workspace_text(root, replacement_path, what="replacement")
         line_range: tuple[int, int] | None = None
         if allow_line_range:
             if len(allow_line_range) != 2:
@@ -235,6 +242,8 @@ class WritingMcpServer(BasePaperAssistMcpServer):
         return {"status": "ok", "patch": result.to_dict()}
 
     def read_resource(self, resource_uri: str, **payload: Any) -> dict[str, Any]:
+        if not payload.get("workspace") or not payload.get("run_id"):
+            raise ValueError("writing resources require workspace and run_id")
         root = _workspace_path(str(payload["workspace"]))
         run_id = str(payload["run_id"])
         if resource_uri == "writing://plan":

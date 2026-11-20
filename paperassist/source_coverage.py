@@ -69,8 +69,7 @@ _IDENTIFIER_RE = re.compile(
 )
 
 _STOPWORDS = frozenset(
-    """a an the of and or for to in on at by with from as is are was were be
-    dan atau yang untuk pada dengan dari ke di ini itu""".split()
+    ["a", "an", "the", "of", "and", "or", "for", "to", "in", "on", "at", "by", "with", "from", "as", "is", "are", "was", "were", "be", "dan", "atau", "yang", "untuk", "pada", "dengan", "dari", "ke", "di", "ini", "itu"]
 )
 
 

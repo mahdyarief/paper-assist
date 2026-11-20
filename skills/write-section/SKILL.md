@@ -1,6 +1,6 @@
 ---
 name: write-section
-description: Section-level paper writing. Draft a single section without taking over the scientist / mvp / writeup pipeline.
+description: Section-level paper writing. Draft a single section without taking over the writing pack workflow.
 ---
 
 # Write Section

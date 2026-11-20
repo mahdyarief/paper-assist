@@ -15,8 +15,9 @@ Sourced 2026-11-15. National-language (Indonesian) profiles are marked with
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass, field
-from typing import Any, Mapping
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
+from typing import Any
 
 THESIS_PROFILE_SCHEMA = "paperassist.thesis-profiles/v1"
 
@@ -303,9 +304,10 @@ def detect_thesis_profiles(text: str, *, limit: int = 10) -> dict[str, Any]:
         reasons: list[str] = []
         # Campus-specific profiles need their institution named in the source;
         # otherwise a bare \documentclass{report} falls back to the generic baseline.
-        if p.requires_institution_token:
-            if not any(tok.lower() in low for tok in p.match_tokens):
-                continue
+        if p.requires_institution_token and not any(
+            tok.lower() in low for tok in p.match_tokens
+        ):
+            continue
         if doc_class and doc_class.lower() in {c.lower() for c in p.match_classes}:
             score += 5
             reasons.append(f"documentclass={doc_class}")

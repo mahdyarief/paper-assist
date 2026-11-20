@@ -1,8 +1,8 @@
 # PaperAssist
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v4.0.0-2563eb" alt="Version v4.0.0" />
-  <img src="https://img.shields.io/badge/Python-3.10--3.12-3776ab?logo=python&logoColor=white" alt="Python 3.10-3.12" />
+  <img src="https://img.shields.io/badge/version-v4.0.1-2563eb" alt="Version v4.0.1" />
+  <img src="https://img.shields.io/badge/Python-3.10--3.13-3776ab?logo=python&logoColor=white" alt="Python 3.10-3.13" />
 </p>
 
 PaperAssist is a model-free research runtime and an OpenClaude / Claude Code
@@ -18,7 +18,7 @@ provider client, no API key handling and no model selection.
 
 - [What changed in v4](#what-changed-in-v4)
 - [How it works](#how-it-works)
-- [Install as OpenClaude plugin](#install-as-openclaude-plugin)
+- [Install](#install)
 - [Using the plugin](#using-the-plugin)
 - [Writing a paper: AI Harness &rarr; Paper-Assist](#writing-a-paper-ai-harness--paper-assist)
 - [Research OS pipeline](#research-os-pipeline)
@@ -58,32 +58,48 @@ PaperAssist never generates text. It owns:
 - **Verification**: citation keys, score ranges, artifact hashes, release gates.
 - **Audit naskah**: claim ledger, kanal narasi vs bukti, kualitas manuskrip, dan source-coverage untuk SLR/review.
 
-## Install as OpenClaude plugin
+## Install
 
-Tambahkan ke direktori plugin user OpenClaude:
+### Claude Code (marketplace)
 
-```bash
-cp -r . /c/Users/<you>/.openclaude/plugins/paper-assist
+Repo ini sekaligus marketplace `mahdyarief`, jadi plugin terpasang sebagai
+`paper-assist@mahdyarief`:
+
+```text
+/plugin marketplace add mahdyarief/paper-assist
+/plugin install paper-assist@mahdyarief
 ```
 
-Atau clone langsung:
+Atau dalam satu langkah (Claude Code 2.1.275+):
+
+```text
+/plugin install paper-assist --marketplace mahdyarief/paper-assist
+```
+
+Dari shell: `claude plugin marketplace add mahdyarief/paper-assist` lalu
+`claude plugin install paper-assist@mahdyarief`. Untuk menguji salinan lokal,
+ganti `mahdyarief/paper-assist` dengan path folder repo ini.
+
+### OpenClaude
+
+Clone ke direktori plugin user OpenClaude:
 
 ```bash
 git clone https://github.com/mahdyarief/paper-assist.git ~/.openclaude/plugins/paper-assist
 ```
 
-Lalu aktifkan:
+### Kebutuhan
+
+Hanya Python 3.10+ di `PATH` sebagai `python`; runtime dan MCP server memakai
+standard library saja, jadi tidak perlu `pip install`. Opsional, untuk
+ekstraksi teks PDF referensi:
 
 ```bash
-cd ~/.openclaude/plugins/paper-assist
-python -m pip install -r requirements-core.txt
+python -m pip install -r requirements.txt
 ```
 
-Verifikasi MCP server:
-
-```bash
-python mcp_servers/stdio.py
-```
+Verifikasi: panggil tool `harness_status`, atau jalankan
+`python mcp_servers/stdio.py` dan kirim request JSON-RPC `initialize`.
 
 ## Using the plugin
 
@@ -91,13 +107,23 @@ Plugin ini dideklarasikan oleh `.claude-plugin/plugin.json`. Skill dibaca
 dari `skills/`, dan MCP server `paperassist` berada di
 `mcp_servers/stdio.py` (JSON-RPC over stdio).
 
-MCP tools (16):
+MCP tools (17):
 
 | Group | Tools |
 |---|---|
 | `paperassist` (planning & packs) | `harness_status`, `pack_scaffold`, `pack_plan`, `pack_task`, `pack_import` |
 | `paperassist` (Research OS) | `corpus_bind`, `claim_audit`, `quality_score`, `research_os`, `improvement_verify`, `journal_lookup`, `thesis_lookup` |
 | `writing` | `writing_pack`, `writing_plan`, `writing_task`, `writing_import`, `writing_patch` |
+
+Setiap tool mengiklankan `inputSchema` lengkap (nama, tipe, default, wajib),
+dan argumen yang tidak dikenal ditolak dengan daftar argumen yang diterima.
+Kegagalan eksekusi dikembalikan sebagai hasil `isError: true` agar harness
+bisa membaca pesannya dan memperbaiki panggilan.
+
+Resources dibaca lewat `resources/read`; parameter per-run dikirim sebagai
+query string, mis. `paperassist://pack?workspace=<ws>&kind=review&run_id=<id>`,
+`writing://brief?workspace=<ws>&run_id=<id>`, atau
+`paperassist://journal-profiles?scope=indonesia`.
 
 `journal_lookup` returns curated, citable format references (Indonesian
 SINTA/JTIM and international Elsevier/IEEE/Springer/ACM), or detects plausible
@@ -136,7 +162,8 @@ before submission.
 
 PaperAssist bukan generator teks. Alurnya:
 
-1. Harness memanggil `pack_scaffold` (ideation / experiment / review / writing).
+1. Harness memanggil `pack_scaffold` (`kind`: ideation / experiment / review)
+   atau `writing_pack` untuk draft LaTeX.
 2. Harness membaca `plan.json` + `agent-brief.md` + `tasks/*.json` dari pack.
 3. Harness melakukan pekerjaan (ide, uji, review, draft LaTeX).
 4. Hasil diimpor kembali lewat `pack_import` / `writing_import` — gate
@@ -149,11 +176,11 @@ Contoh (dari harness/agent, bukan konsol CLI):
 pack_scaffold { "workspace": "<ws>", "kind": "ideation", "topic": "...", "venue": "NeurIPS" }
 
 # 2. Harness kerjakan task dari pack, lalu impor hasil
-pack_import { "workspace": "<ws>", "run_id": "<id>", "import": "ideas.json" }
+pack_import { "workspace": "<ws>", "kind": "ideation", "run_id": "<id>", "result_path": "ideas.json" }
 
 # 3. Writing pack untuk draft LaTeX
 writing_pack   { "workspace": "<ws>", "topic": "...", "title": "..." }
-writing_import { "workspace": "<ws>", "run_id": "<id>", "import": "draft.tex" }
+writing_import { "workspace": "<ws>", "run_id": "<id>", "draft_path": "draft.tex" }
 ```
 
 > Catatan: tool `pack_scaffold`, `pack_task`, `pack_import`, `writing_pack`,
@@ -204,7 +231,7 @@ deterministic checks yang dapat diulang. Model ini berdiri di atas empat pilar:
 |---|---|---|
 | **Evidence-first / PRISMA-like traceability** | PRISMA 2020, Kitchenham: identification → screening → eligibility → included; setiap angka dan klaim harus dapat ditelusuri ke sumber | `corpus_bind` mengikat record ekstraksi ↔ PDF lokal ↔ entri BibTeX; PRISMA flow dan extraction records diterima sebagai `records_paths` |
 | **Provenance & claim ledger** | Setiap sitasi membutuhkan *locator* (halaman/baris + kutipan opsional); klaim dibedakan dari narasi | `% @locator{key: page=..., quote="..."}`, status `anchored / grounded / attributed / derived / unsupported`, kanal `evidence` vs `narrative` |
-| **Rubrik kualitas transparan** | Review rubric SINTA/Scopus: struktur, metode, sintesis, batasan, gaya, keterbacaan | `score_manuscript` dengan 11 dimensi berbobot; grade A–E (A ≥ 0.85) dan rekomendasi accept/minor/major/reject |
+| **Rubrik kualitas transparan** | Review rubric SINTA/Scopus: struktur, metode, sintesis, batasan, gaya, keterbacaan | `score_manuscript` dengan 12 dimensi berbobot; grade A–E (A ≥ 0.85) dan rekomendasi accept/minor/major/reject |
 | **Human-in-the-loop (HITL)** | AI bukan pembuat data/fakta; peneliti memutuskan, verifikasi tidak bisa dilewatkan | `provider_calls: 0`, import gate, protected experiment blocks, `improvement_verify` membandingkan before/after dan menolak revisi yang menurunkan grounding |
 
 Dengan kata lain: **PaperAssist tidak mengarang isi, tetapi menolak isi yang tidak
@@ -228,7 +255,7 @@ flowchart TD
         X["expand_includes + _resolve_source<br/>baca teks & validasi path"]
         B["corpus_bind<br/>DOI/title/record-id → PDF + BibTeX"]
         C["build_ledger<br/>pisah evidence ↔ narrative + status klaim"]
-        Q["score_manuscript<br/>11 dimensi → grade + findings"]
+        Q["score_manuscript<br/>12 dimensi → grade + findings"]
         P["revision_plan<br/>urutan perbaikan"]
         V["audit_source_coverage<br/>heading + angka: covered/partial/missing"]
         H["AI harness boleh menulis ulang<br/>hanya narrative.jsonl"]
@@ -302,6 +329,7 @@ menolak revisi bila skor grounding atau dimensi turun melebihi ambang.
 
 | Skill | Purpose |
 |---|---|
+| `research-workflow` | Orchestrate the MCP tools: pack &rarr; execute &rarr; import, and Research OS audit &rarr; revise narrative &rarr; `improvement_verify` |
 | `write-section` | Draft one section without taking over the pipeline |
 | `refine-section` | Tighten logic/wording/structure in one section |
 | `citation-gap` | Find the single most important missing citation |

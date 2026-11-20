@@ -18,7 +18,7 @@ import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -362,7 +362,7 @@ def bind_corpus(
         # Strategy 2: DOI appearing in the file name.
         if text_path is None and doi:
             doi_token = doi.replace("/", "").replace(".", "")
-            for path, relative in files:
+            for _path, relative in files:
                 condensed = relative.lower().replace("/", "").replace(".", "")
                 if doi.lower() in relative.lower() or (
                     len(doi_token) >= 8 and doi_token in condensed
@@ -373,7 +373,7 @@ def bind_corpus(
 
         # Strategy 3: normalized title appearing in the file name.
         if text_path is None and title_reliable:
-            for path, relative in files:
+            for _path, relative in files:
                 if title_key in normalize_title(relative):
                     text_path = relative
                     strategy = STRATEGY_TITLE

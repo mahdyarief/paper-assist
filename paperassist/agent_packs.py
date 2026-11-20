@@ -277,8 +277,21 @@ def load_plan(workspace: str | Path, *, run_id: str, kind: str) -> dict[str, Any
     return payload
 
 
+_TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _check_task_id(task_id: str) -> str:
+    """Task ids are file stems; refuse separators and ``..`` before any read."""
+
+    value = str(task_id or "")
+    if not _TASK_ID.fullmatch(value) or ".." in value:
+        raise AgentPackError(f"invalid task_id: {task_id!r}")
+    return value
+
+
 def load_task(workspace: str | Path, *, run_id: str, kind: str, task_id: str) -> dict[str, Any]:
     root = Path(workspace).expanduser().resolve(strict=True)
+    task_id = _check_task_id(task_id)
     path = root / pack_directory(kind, run_id) / TASKS_DIRNAME / f"{task_id}.json"
     if not path.is_file():
         raise FileNotFoundError(f"{kind} task not found: {task_id}")
@@ -405,7 +418,7 @@ def import_ideation(
         if idea_id in seen:
             raise AgentPackError(f"duplicate idea id: {idea_id}")
         seen.add(idea_id)
-        card = {
+        card: dict[str, Any] = {
             "id": idea_id,
             "title": _require_text(raw.get("title"), f"idea {index} title"),
             "problem": _require_text(raw.get("problem"), f"idea {index} problem"),

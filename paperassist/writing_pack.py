@@ -20,7 +20,6 @@ from typing import Any
 
 from .context_inventory import (
     DEFAULT_CONTEXT_BUDGET_BYTES,
-    ContextError,
     ContextInventory,
     format_context_brief,
     inventory_from_payload,
@@ -1382,6 +1381,9 @@ def load_writing_task(
     task_id: str,
 ) -> dict[str, Any]:
     root = Path(workspace).expanduser().resolve(strict=True)
+    value = str(task_id or "")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value) or ".." in value:
+        raise WritingPackError(f"invalid task_id: {task_id!r}")
     path = (
         root
         / WRITING_PACK_ROOT

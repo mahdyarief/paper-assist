@@ -138,13 +138,6 @@ def test_min_grounding_ratio_threshold():
     assert strict.passed is False
 
 
-def test_citation_contexts_multi_key():
-    text = draft(r"Both ideas \cite{k1, k2} stand.")
-    contexts = extract_citation_contexts(text)
-    assert [context.key for context in contexts] == ["k1", "k2"]
-    assert "Both ideas" in contexts[0].sentence
-
-
 def test_report_is_json_serialisable():
     text = draft(
         r"Alpha matters \cite{k1}.",

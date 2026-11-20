@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from paperassist.research_os import run_research_os, ResearchOSError
+from paperassist.research_os import ResearchOSError, run_research_os
 
 
 def main() -> int:

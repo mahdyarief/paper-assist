@@ -4,29 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paperassist"
-version = "4.0.0"
+version = "4.0.1"
 description = "Model-free research runtime: deterministic task packs executed by an external AI harness"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.14"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{name = "PaperAssist contributors"}]
-dependencies = [
-  "requests==2.32.5",
-  "pyyaml>=6.0,<7",
-]
+# The runtime and MCP server use only the standard library.
+dependencies = []
 
 [project.scripts]
 paperassist = "mcp_servers.stdio:main"
 
 [project.optional-dependencies]
+# Optional PDF text extraction for reference excerpts (pymupdf, then pypdf).
 writing = [
-  "numpy==1.26.4",
-  "pyalex==0.21",
   "pymupdf==1.27.1",
-  "pymupdf4llm==0.3.4",
   "pypdf==6.7.5",
-  "requests==2.32.5",
 ]
 dev = [
   "mypy==1.16.1",

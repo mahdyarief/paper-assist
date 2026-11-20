@@ -19,7 +19,7 @@ import hashlib
 import io
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -149,7 +149,7 @@ class ContextInventory:
 
 
 def _stable_source_id(relative: str, sha256: str) -> str:
-    digest = hashlib.sha256(f"{relative}:{sha256}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{relative}:{sha256}".encode()).hexdigest()
     return f"ctx-{digest[:16]}"
 
 
@@ -227,7 +227,7 @@ def _shape_of(text: str, suffix: str, *, parsed: Any = None, truncated: bool = F
                 if payload is None:
                     return {"container": "unparseable", "reason": "truncated-json"}
             if isinstance(payload, list):
-                first = payload[0] if payload else None
+                first: Any = payload[0] if payload else None
                 fields = sorted(first.keys()) if isinstance(first, Mapping) else []
                 return {
                     "container": "array",
@@ -251,11 +251,11 @@ def _shape_of(text: str, suffix: str, *, parsed: Any = None, truncated: bool = F
                 return {
                     "container": "object",
                     "records": 1,
-                    "fields": sorted(str(key) for key in payload.keys()),
+                    "fields": sorted(str(key) for key in payload),
                 }
         if suffix == ".jsonl":
             rows = [line for line in text.splitlines() if line.strip()]
-            first: Any = None
+            first = None
             if rows:
                 try:
                     first = json.loads(rows[0])

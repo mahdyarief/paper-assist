@@ -6,12 +6,11 @@ import json
 
 import pytest
 
-from paperassist.context_inventory import inventory_from_payload
+from paperassist.context_inventory import ContextSafetyError, inventory_from_payload
 from paperassist.writing_pack import (
     DEFAULT_DEPTH,
     DEPTH_PROFILES,
     THESIS_BARE_SECTIONS,
-    THESIS_DEFAULT_SECTIONS,
     build_tasks,
     build_writing_pack,
     skeleton_document_kind,
@@ -354,7 +353,7 @@ def test_context_paths_must_stay_in_workspace(tmp_path):
     make_workspace(tmp_path)
     outside = tmp_path.parent / "leak.md"
     outside.write_text("secret\n", encoding="utf-8")
-    with pytest.raises(Exception):
+    with pytest.raises(ContextSafetyError):
         build_writing_pack(
             tmp_path,
             run_id="run-5",

@@ -49,6 +49,10 @@ def reject_symlink_components(
             raise UnsafePathError(
                 f"writable anchor is a symbolic link: {anchor_path}"
             )
+        # ``Path.absolute()`` keeps ``..`` segments, so ``anchor/../x`` would
+        # pass the lexical containment test below while pointing outside it.
+        if ".." in lexical.parts:
+            raise UnsafePathError("writable path leaves its trusted anchor (contains '..')")
         try:
             lexical.relative_to(anchor_path)
         except ValueError as exc:

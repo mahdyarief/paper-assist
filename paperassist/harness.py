@@ -32,8 +32,7 @@ def plugin_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _mcp_servers(root: Path) -> dict[str, Any]:
-    path = root / MCP_MANIFEST
+def _manifest_servers(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
     try:
@@ -42,6 +41,18 @@ def _mcp_servers(root: Path) -> dict[str, Any]:
         return {}
     servers = payload.get("mcpServers") if isinstance(payload, dict) else None
     return servers if isinstance(servers, dict) else {}
+
+
+def _mcp_servers(root: Path) -> dict[str, Any]:
+    """MCP servers the plugin declares.
+
+    ``plugin.json`` is authoritative for an installed plugin; a standalone
+    ``.mcp.json`` (project-level registration) is merged in when present.
+    """
+
+    servers = dict(_manifest_servers(root / MCP_MANIFEST))
+    servers.update(_manifest_servers(root / PLUGIN_MANIFEST))
+    return servers
 
 
 def harness_status(workspace: str | Path, *, root: str | Path | None = None) -> dict[str, Any]:
@@ -53,11 +64,12 @@ def harness_status(workspace: str | Path, *, root: str | Path | None = None) -> 
         name: shutil.which(name) is not None
         for name in ("latexmk", "pdflatex", "bibtex", "pdftoppm", "python")
     }
+    servers = _mcp_servers(plugin_dir)
     checks = {
         "workspace_exists": workspace_path.is_dir(),
         "workspace_writable": workspace_path.is_dir() and os.access(workspace_path, os.W_OK),
         "plugin_manifest": (plugin_dir / PLUGIN_MANIFEST).is_file(),
-        "mcp_manifest": (plugin_dir / MCP_MANIFEST).is_file(),
+        "mcp_manifest": bool(servers),
         "latex_compiler": bool(tools["latexmk"] or tools["pdflatex"]),
         "pdf_renderer": bool(tools["pdftoppm"]),
         "harness_detected": any(os.environ.get(marker) for marker in HARNESS_ENV_MARKERS),
@@ -72,7 +84,7 @@ def harness_status(workspace: str | Path, *, root: str | Path | None = None) -> 
         "blocking": blocking,
         "checks": checks,
         "tools": tools,
-        "mcp_servers": sorted(_mcp_servers(plugin_dir)),
+        "mcp_servers": sorted(servers),
         "pack_kinds": list(PACK_KINDS),
         "plugin_root": str(plugin_dir),
         "workspace": str(workspace_path),

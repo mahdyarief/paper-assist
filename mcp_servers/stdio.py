@@ -14,6 +14,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -23,7 +24,13 @@ from mcp_servers.runner import load_server  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "paperassist"
-SERVER_VERSION = "4.0.0"
+SERVER_VERSION = "4.0.1"
+
+INVALID_PARAMS = -32602
+
+
+class UnknownToolError(ValueError):
+    """The client named a tool this server does not expose (protocol error)."""
 
 
 class ToolRouter:
@@ -44,15 +51,21 @@ class ToolRouter:
                     {
                         "name": spec.name,
                         "description": spec.description,
-                        "inputSchema": {"type": "object", "additionalProperties": True},
+                        "inputSchema": server.tool_schema(spec),
                     }
                 )
         return tools
 
+    def find_or_raise(self, tool_name: str):
+        server = self._find(tool_name)
+        if server is None:
+            raise UnknownToolError(f"unknown tool: {tool_name}")
+        return server
+
     def call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         server = self._find(tool_name)
         if server is None:
-            raise ValueError(f"unknown tool: {tool_name}")
+            raise UnknownToolError(f"unknown tool: {tool_name}")
         return server.call_tool(tool_name, **arguments)
 
     def resources(self) -> list[dict[str, Any]]:
@@ -68,6 +81,29 @@ class ToolRouter:
                     }
                 )
         return resources
+
+    def read_resource(self, uri: str) -> dict[str, Any]:
+        """Read a resource; per-run parameters travel in the URI query string.
+
+        Example: ``paperassist://pack?workspace=D:/ws&kind=review&run_id=r1``.
+        """
+
+        parts = urlsplit(uri)
+        base = f"{parts.scheme}://{parts.netloc}{parts.path}"
+        payload = dict(parse_qsl(parts.query))
+        for server in self.servers:
+            if any(spec.uri == base for spec in server.resources()):
+                result = server.read_resource(base, **payload)
+                return {
+                    "contents": [
+                        {
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": json.dumps(result, ensure_ascii=False, indent=2, default=str),
+                        }
+                    ]
+                }
+        raise UnknownToolError(f"unknown resource: {base}")
 
 
 def _respond(request_id: Any, result: Any) -> None:
@@ -121,8 +157,21 @@ def main() -> int:
                 name = str(params.get("name") or "")
                 arguments = params.get("arguments") or {}
                 if not isinstance(arguments, dict):
-                    raise ValueError("tool arguments must be an object")
-                result = router.call(name, arguments)
+                    raise UnknownToolError("tool arguments must be an object")
+                router.find_or_raise(name)
+                try:
+                    result = router.call(name, arguments)
+                except Exception as exc:  # noqa: BLE001 - reported to the harness
+                    # Execution errors go back as a tool result, so the harness
+                    # can read the message and correct its call (MCP spec).
+                    _respond(
+                        request_id,
+                        {
+                            "content": [{"type": "text", "text": f"{type(exc).__name__}: {exc}"}],
+                            "isError": True,
+                        },
+                    )
+                    continue
                 _respond(
                     request_id,
                     {
@@ -138,10 +187,11 @@ def main() -> int:
             elif method == "resources/list":
                 _respond(request_id, {"resources": router.resources()})
             elif method == "resources/read":
-                uri = str(params.get("uri") or "")
-                raise ValueError(f"resource reads require tool-specific payloads: {uri}")
+                _respond(request_id, router.read_resource(str(params.get("uri") or "")))
             else:
                 _error(request_id, -32601, f"method not found: {method}")
+        except UnknownToolError as exc:
+            _error(request_id, INVALID_PARAMS, str(exc))
         except Exception as exc:  # noqa: BLE001 - protocol boundary must not crash
             _error(request_id, -32000, f"{type(exc).__name__}: {exc}")
     return 0

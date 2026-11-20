@@ -1,23 +1,32 @@
 # MCP servers
 
-This directory holds the shared MCP bridge conventions used inside the repo:
+This directory holds the MCP bridge the plugin exposes:
 
-- `base.py`: common server / tool / resource abstractions
-- `runner.py`: single entry point for starting and calling a server
-- `stdio.py`: the JSON-RPC stdio server the plugin exposes
-- `paperassist/`: pack tools (`harness_status`, `pack_scaffold`, `pack_plan`, `pack_task`, `pack_import`)
-- `writing/`: writing pack tools (`writing_pack`, `writing_plan`, `writing_task`, `writing_import`, `writing_patch`)
-- `literature/`, `bibliography/`, `file-gateway/`, `remote-runner/`, `diagram/`, `aigc-eval/`: domain bridges
+- `base.py`: shared server / tool / resource abstractions and input-schema
+  generation from tool signatures
+- `runner.py`: single entry point for loading and calling a server from a shell
+- `stdio.py`: the JSON-RPC stdio server the plugin exposes; it merges both
+  servers below into one toolset
+- `paperassist/`: pack and Research OS tools (`harness_status`, `pack_scaffold`,
+  `pack_plan`, `pack_task`, `pack_import`, `corpus_bind`, `claim_audit`,
+  `quality_score`, `research_os`, `improvement_verify`, `journal_lookup`,
+  `thesis_lookup`)
+- `writing/`: writing pack tools (`writing_pack`, `writing_plan`,
+  `writing_task`, `writing_import`, `writing_patch`)
 
-## Status
+Both servers are live, deterministic and model-free.
 
-- `paperassist`, `writing`: live, deterministic, model-free
-- `literature`: live bridge over the existing literature search
-- `bibliography`: live bridge over the minimal bibliography manager
-- `file-gateway`: skeleton lock-aware workspace file gateway
-- `remote-runner`: skeleton bridge over the cloud cycle / sync entry points
-- `diagram`: skeleton bridge for light structural diagrams and captions
-- `aigc-eval`: skeleton bridge for light text-risk checks
+## Protocol behaviour
+
+- `tools/list` returns a real `inputSchema` per tool, built from the method
+  signature (plus declared `payload_keys` for `**payload` tools).
+- Unknown arguments are rejected with the list of accepted ones.
+- Tool execution failures come back as `isError: true` results; only an
+  unknown tool or malformed request is a JSON-RPC error.
+- `resources/read` takes per-run parameters in the URI query string, e.g.
+  `paperassist://task?workspace=<ws>&kind=review&run_id=<id>&task_id=<task>`.
+- Nothing may write to stdout except the JSON-RPC stream; diagnostics go to
+  stderr.
 
 ## Design principles
 
@@ -25,4 +34,3 @@ This directory holds the shared MCP bridge conventions used inside the repo:
 - Every tool is model-free: no provider calls, no credentials, no prompts sent
   to a remote service.
 - Write operations must take the workspace lock.
-- Build an equivalent bridge first, then strengthen it.
