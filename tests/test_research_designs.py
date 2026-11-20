@@ -51,7 +51,10 @@ def test_aliases_resolve_case_and_separator_insensitively():
 @pytest.mark.parametrize(
     ("text", "family", "expected"),
     [
-        ("A systematic review and meta-analysis following PRISMA.", "review", "meta_analysis"),
+        ("A systematic review and meta-analysis following PRISMA; the meta-analysis pooled 12 trials.", "review", "meta_analysis"),
+        ("An SLR following PRISMA (Preferred Reporting Items for Systematic Reviews and Meta-Analyses).", "review", "systematic_review"),
+        ("Penelitian dan pengembangan model ADDIE; angket validasi ahli dan angket respon siswa (kuesioner).", "empirical", "research_development"),
+        ("Survei daring dengan kuesioner Likert kepada 300 responden.", "empirical", "survey"),
         ("We conducted a scoping review using the Arksey and O'Malley framework.", "review", "scoping_review"),
         ("Analisis bibliometrik dengan VOSviewer atas data Scopus.", "review", "bibliometric"),
         ("Only inclusion criteria were applied.", "review", "systematic_review"),

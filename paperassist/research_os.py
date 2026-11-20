@@ -60,6 +60,7 @@ from .manuscript_quality import (
     format_quality_report,
     score_manuscript,
 )
+from .participant_flow import ARM_KEYS, check_participant_flow
 from .path_safety import UnsafePathError, reject_symlink_components
 from .provenance_audit import DEFAULT_MIN_ANCHORED, extract_locators, load_locators_payload
 from .reporting_checks import (
@@ -73,6 +74,7 @@ from .reporting_checks import (
     resolve_research_design,
     verify_locator_quotes,
 )
+from .research_designs import explain_detection
 from .source_coverage import SourceCoverage, audit_source_coverage, format_source_coverage
 
 RESEARCH_OS_ROOT = Path(".paperassist") / "research-os"
@@ -182,9 +184,11 @@ def _read_records_file(workspace: Path, source: str) -> list[Mapping[str, Any]]:
             # A count document (screening totals, a flow summary) is still
             # evidence: its numbers are what the prose cites. A document of
             # records, by contrast, always holds its rows in a list.
+            # Trial arms listed as objects are counts too, not study rows.
             if not any(
                 isinstance(value, list) and value and isinstance(value[0], Mapping)
-                for value in data.values()
+                for key, value in data.items()
+                if str(key).strip().lower() not in ARM_KEYS
             ):
                 # Marking the document tells the ledger its numbers are counts
                 # and proportions, not measurements. Without the marker the
@@ -332,6 +336,28 @@ def _bound_texts(
     return texts
 
 
+def _participant_flow_documents(
+    root: Path, payload: Mapping[str, Any], count_documents: Sequence[Mapping[str, Any]]
+) -> list[Mapping[str, Any]]:
+    """The CONSORT/STROBE counts: ``participant_flow`` (object or JSON path) or count files."""
+
+    value = payload.get("participant_flow")
+    if isinstance(value, Mapping):
+        return [value]
+    if isinstance(value, str) and value.strip():
+        path = _resolve_source(root, value, what="participant flow")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except json.JSONDecodeError as exc:
+            raise ResearchOSError(f"participant flow is not valid JSON: {value}") from exc
+        if not isinstance(data, Mapping):
+            raise ResearchOSError("participant flow must be a JSON object of counts")
+        return [data]
+    if value not in (None, ""):
+        raise ResearchOSError("participant_flow must be a JSON object or a workspace path")
+    return list(count_documents)
+
+
 def _reporting_checks(
     root: Path,
     payload: Mapping[str, Any],
@@ -357,10 +383,19 @@ def _reporting_checks(
         )
     except ValueError as exc:
         raise ResearchOSError(str(exc)) from exc
-    if payload.get("research_design") not in (None, "", "auto"):
+    explicit_design = payload.get("research_design") not in (None, "", "auto")
+    if explicit_design:
         paper_type = design.family
 
-    flow = check_prisma_flow([record for record in records if record.get("_counts")])
+    count_documents = [record for record in records if record.get("_counts")]
+    flow = check_prisma_flow(count_documents)
+    participant_flow = None
+    if design.flow in ("consort", "strobe"):
+        participant_flow = check_participant_flow(
+            _participant_flow_documents(root, payload, count_documents),
+            kind=design.flow,
+            randomised=design.key == "rct",
+        )
 
     required = payload.get("required_declarations")
     profile_id = payload.get("journal_profile")
@@ -410,6 +445,10 @@ def _reporting_checks(
         "paper_type": paper_type,
         "research_design": design,
         "prisma_flow": flow if design.flow == "prisma" else None,
+        "participant_flow": participant_flow,
+        "design_detection": None
+        if explicit_design
+        else explain_detection(manuscript, family=design.family),
         "declarations": declarations,
         "reference_audit": reference_audit,
         "locator_checks": locator_checks,
@@ -497,6 +536,7 @@ def run_research_os(
             paper_type=checks["paper_type"],
             research_design=checks["research_design"].key,
             prisma_flow=checks["prisma_flow"],
+            participant_flow=checks["participant_flow"],
             declarations=checks["declarations"],
             reference_audit=checks["reference_audit"],
             locator_checks=checks["locator_checks"],
@@ -579,6 +619,10 @@ def run_research_os(
                 "prisma_flow": checks["prisma_flow"].to_dict()
                 if checks["prisma_flow"]
                 else None,
+                "participant_flow": checks["participant_flow"].to_dict()
+                if checks["participant_flow"]
+                else None,
+                "design_detection": checks["design_detection"],
                 "declarations": checks["declarations"].to_dict(),
                 "references": checks["reference_audit"].to_dict()
                 if checks["reference_audit"]

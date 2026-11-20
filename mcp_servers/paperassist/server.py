@@ -101,6 +101,7 @@ _RESEARCH_KEYS = frozenset(
         "research_source",
         "paper_type",
         "research_design",
+        "participant_flow",
         "required_declarations",
         "journal_profile",
         "reference_policy",
@@ -203,7 +204,9 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                 description=(
                     "Run the full pipeline (bind, audit, score, separate, plan) and "
                     "write narrative.jsonl and evidence.jsonl as distinct artifacts; "
-                    "also checks PRISMA flow arithmetic, declarations, references "
+                    "also checks flow arithmetic (PRISMA for reviews, CONSORT/STROBE "
+                    "participant flow for trials and observational studies), "
+                    "declarations, references "
                     "(recency, primary share, retractions) and locator quotes."
                 ),
                 payload_keys=tuple(sorted(_RESEARCH_KEYS)),
@@ -403,11 +406,36 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
         research_design: str = "auto",
         required_declarations: list[str] | None = None,
         reference_policy: dict[str, Any] | None = None,
+        flow_path: str | None = None,
     ) -> dict[str, Any]:
+        """``flow_path`` is a JSON file of flow counts: PRISMA for a review,
+        CONSORT for a trial or quasi-experiment, STROBE for an observational
+        study (whichever the resolved research design uses)."""
+
         from paperassist.reporting_checks import ReferencePolicy, check_declarations
 
         root = _workspace(workspace)
         text = read_workspace_text(root, target_path, what="manuscript")
+        prisma_flow = participant_flow = None
+        if flow_path:
+            import json
+
+            from paperassist.participant_flow import check_participant_flow
+            from paperassist.reporting_checks import check_prisma_flow, resolve_research_design
+
+            try:
+                counts = json.loads(read_workspace_text(root, flow_path, what="flow counts"))
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"flow counts are not valid JSON: {flow_path}") from exc
+            if not isinstance(counts, dict):
+                raise ValueError("flow counts must be a JSON object")
+            flow_design = resolve_research_design(research_design, text, paper_type=paper_type)
+            if flow_design.flow == "prisma":
+                prisma_flow = check_prisma_flow([counts])
+            elif flow_design.flow in ("consort", "strobe"):
+                participant_flow = check_participant_flow(
+                    [counts], kind=flow_design.flow, randomised=flow_design.key == "rct"
+                )
         entries: list[str] = []
         bib_text: str | None = None
         if bibliography_path:
@@ -443,6 +471,8 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                 text, required=required_declarations, paper_type=resolved
             ),
             reference_audit=reference_audit,
+            prisma_flow=prisma_flow,
+            participant_flow=participant_flow,
             asset_root=str((root / target_path).parent),
         )
         return {
@@ -580,7 +610,7 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             design_catalogue,
             design_hits,
             design_method_brief,
-            detect_research_design,
+            explain_detection,
             get_design,
         )
 
@@ -589,11 +619,15 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                 raise ValueError("workspace is required when manuscript_path is given")
             text = read_workspace_text(_workspace(workspace), manuscript_path, what="manuscript")
             family = resolve_paper_type("auto", text)
-            design = get_design(detect_research_design(text, family=family))
+            explanation = explain_detection(text, family=family)
+            design = get_design(explanation["chosen"])
             result: dict[str, Any] = {
                 "detected": design.to_dict(),
                 "family": family,
-                "candidates": design_hits(text),
+                "confidence": explanation["confidence"],
+                "reason": explanation["reason"],
+                "candidates": explanation["candidates"],
+                "hits": design_hits(text),
             }
             designs = [design]
         elif query:
@@ -607,6 +641,19 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             result = {"count": len(items), "designs": items}
             designs = [DESIGNS[item["key"]] for item in items]
         lines = ["## Research designs", ""]
+        if "confidence" in result:
+            lines += [
+                f"**Detected:** `{result['detected']['key']}` "
+                f"(confidence {result['confidence']}: {result['reason']})",
+                "",
+            ]
+            for item in result["candidates"]:
+                mark = "" if item["counted"] else f" (below the {item['min_hits']}-mention minimum)"
+                lines.append(
+                    f"- `{item['key']}`: {item['hits']} mention(s){mark}: "
+                    + ", ".join(f"\"{phrase}\"" for phrase in item["matched"])
+                )
+            lines.append("")
         for design in designs:
             lines += [f"### {design.label} (`{design.key}`)", "", design_method_brief(design), ""]
         return {

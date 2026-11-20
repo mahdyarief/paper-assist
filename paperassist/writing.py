@@ -168,6 +168,7 @@ def _latex_skeleton(title: str, payload: Mapping[str, Any] | None = None) -> str
         title,
         document_kind=str(payload.get("document_kind") or "paper"),
         thesis_type=str(payload.get("thesis_type") or "thesis"),
+        research_design=payload.get("research_design"),
     )
 
 

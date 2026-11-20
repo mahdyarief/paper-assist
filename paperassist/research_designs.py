@@ -11,7 +11,11 @@ guideline into checkable signals:
 * ``results_signals``: what the Results must report (statistics for
   quantitative designs, themes and quotes for qualitative ones, per-cycle
   comparison for action research, and so on);
-* ``flow``: ``"prisma"`` when a PRISMA flow diagram applies.
+* ``flow``: the flow diagram whose arithmetic is checked: ``"prisma"``
+  (records through a review), ``"consort"`` (participants through a trial or
+  a non-randomised evaluation) or ``"strobe"`` (participants at each stage of
+  an observational study);
+* ``method_outline``: suggested Method subsections, in reporting order.
 
 Designs form a small tree (``parent``): a meta-analysis is a systematic review
 with pooled effects, classroom action research (PTK) is action research with
@@ -29,7 +33,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 Signal = tuple[str, str]
@@ -53,8 +57,10 @@ class ResearchDesign:
     parent: str | None = None
     aliases: tuple[str, ...] = ()
     min_hits: int = 1
+    weak_detect: str = ""
     notes: str = ""
     url: str = ""
+    method_outline: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -71,6 +77,7 @@ class ResearchDesign:
             "method_items": [name for name, _ in self.method_signals],
             "repro_items": [name for name, _ in self.repro_signals],
             "results_items": [name for name, _ in self.results_signals],
+            "method_outline": list(self.method_outline),
             "notes": self.notes,
         }
 
@@ -242,6 +249,10 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         url="https://www.prisma-statement.org/",
         aliases=("meta-analysis", "metaanalysis", "meta-analisis", "ma"),
         detect=r"meta-?analy|meta-?analisis",
+        # Every PRISMA citation spells out "...Systematic Reviews and
+        # Meta-Analyses" (stripped before detection), and SLRs mention
+        # meta-analysis in passing: one mention is not a pooled analysis.
+        min_hits=2,
         method_signals=_SYSTEMATIC_METHOD
         + (
             (
@@ -404,6 +415,7 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         family="empirical",
         category="quantitative",
         guideline="CONSORT 2025 (30 items + flow diagram)",
+        flow="consort",
         reference="Hopewell S et al. BMJ 2025;389:e081123",
         url="https://www.consort-spirit.org/",
         aliases=("randomised-trial", "randomized-trial", "randomized controlled trial", "uji klinis"),
@@ -438,7 +450,8 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         label="Quasi-experiment (non-randomised evaluation)",
         family="empirical",
         category="quantitative",
-        guideline="TREND statement",
+        guideline="TREND statement (22 items)",
+        flow="consort",
         reference="Des Jarlais DC, Lyles C, Crepaz N; TREND Group. Am J Public Health 2004;94:361-366",
         aliases=("quasi-experiment", "quasi-experimental", "kuasi-eksperimen", "eksperimen semu"),
         detect=r"quasi[- ]?experiment|kuasi[- ]?eksperimen|eksperimen semu|non-?equivalent (?:control )?group|pretest[- ]posttest|pre-?test[- ]post-?test|interrupted time series",
@@ -460,6 +473,7 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         family="empirical",
         category="quantitative",
         guideline="STROBE (22 items)",
+        flow="strobe",
         reference="von Elm E et al. Lancet 2007;370:1453-1457",
         url="https://www.strobe-statement.org/",
         aliases=("cohort", "case-control", "cross-sectional", "observasional", "potong lintang"),
@@ -487,7 +501,10 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         reference="Sharma A et al. J Gen Intern Med 2021;36:3179-3187; Eysenbach G. J Med Internet Res 2004;6:e34",
         url="https://www.equator-network.org/reporting-guidelines/a-consensus-based-checklist-for-reporting-of-survey-studies-cross/",
         aliases=("questionnaire", "survei", "kuesioner", "angket"),
-        detect=r"survey (?:study|research|design)|penelitian survei|metode survei|online survey|web survey|questionnaire survey|survei daring|kuesioner|angket|questionnaire",
+        detect=r"survey (?:study|research|design)|penelitian survei|metode survei|online survey|web survey|questionnaire survey|survei daring|survei (?:online|kuantitatif)|cross-sectional survey",
+        # Questionnaires are instruments in R&D, PTK and quasi-experiments too:
+        # they count towards a survey only when no other empirical design is named.
+        weak_detect=r"kuesioner|angket|questionnaire",
         min_hits=2,
         method_signals=(
             ("population and sampling", r"population|populasi|sampling|sampel|purposive|random|stratified|slovin|convenience|snowball"),
@@ -512,7 +529,7 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         label="Diagnostic accuracy study",
         family="empirical",
         category="quantitative",
-        guideline="STARD 2015",
+        guideline="STARD 2015 (30 items + flow diagram)",
         reference="Bossuyt PM et al. BMJ 2015;351:h5527",
         url="https://www.equator-network.org/reporting-guidelines/stard/",
         aliases=("diagnostic", "stard", "akurasi diagnostik"),
@@ -537,7 +554,7 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         label="Prediction model (regression or machine learning)",
         family="empirical",
         category="quantitative",
-        guideline="TRIPOD+AI",
+        guideline="TRIPOD+AI (27 items)",
         reference="Collins GS et al. BMJ 2024;385:e078378",
         url="https://www.tripod-statement.org/",
         aliases=("prognostic", "diagnostic-model", "risk-model", "tripod", "model prediksi"),
@@ -795,6 +812,60 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
     ),
 )
 
+# Suggested Method subsections per design, in the order the guideline reports them.
+_METHOD_OUTLINES: dict[str, tuple[str, ...]] = {
+    "meta_analysis": ("Eligibility criteria", "Information sources and search strategy",
+                      "Selection process", "Data collection", "Risk of bias assessment",
+                      "Effect measures", "Synthesis and heterogeneity",
+                      "Reporting bias and certainty of evidence"),
+    "systematic_review": ("Eligibility criteria", "Information sources and search strategy",
+                          "Selection process", "Data collection", "Risk of bias assessment",
+                          "Synthesis methods"),
+    "scoping_review": ("Protocol and framework", "Eligibility criteria",
+                       "Information sources and search", "Selection of sources of evidence",
+                       "Data charting", "Collating and summarising the results"),
+    "bibliometric": ("Data source and search query", "Data cleaning and deduplication",
+                     "Bibliometric indicators", "Science mapping and software"),
+    "narrative_review": ("Literature search", "Selection of literature", "Synthesis approach"),
+    "rct": ("Trial design", "Participants", "Interventions", "Outcomes", "Sample size",
+            "Randomisation and allocation concealment", "Blinding", "Statistical methods"),
+    "quasi_experiment": ("Research design", "Participants and group assignment",
+                         "Intervention", "Instruments", "Data analysis and prerequisite tests"),
+    "observational": ("Study design", "Setting", "Participants", "Variables",
+                      "Data sources and measurement", "Bias", "Study size",
+                      "Statistical methods"),
+    "survey": ("Population and sample", "Instrument", "Validity and reliability",
+               "Data collection and response rate", "Data analysis"),
+    "diagnostic_accuracy": ("Participants", "Index test", "Reference standard",
+                            "Blinding", "Analysis"),
+    "prediction_model": ("Data source", "Outcome", "Predictors", "Sample size",
+                         "Missing data", "Model development", "Validation and performance",
+                         "Fairness"),
+    "ml_experiment": ("Datasets and splits", "Models and baselines",
+                      "Training and hyperparameters", "Evaluation protocol",
+                      "Implementation and compute"),
+    "empirical": ("Research design", "Participants or data", "Procedure", "Data analysis"),
+    "qualitative": ("Approach and paradigm", "Researcher reflexivity",
+                    "Setting and participants", "Data collection", "Data analysis",
+                    "Trustworthiness", "Ethics"),
+    "mixed_methods": ("Design and rationale", "Quantitative strand", "Qualitative strand",
+                      "Integration"),
+    "case_study": ("Case and unit of analysis", "Case selection", "Data sources",
+                   "Analysis", "Validity"),
+    "design_science": ("Problem identification and motivation", "Objectives of the solution",
+                       "Design and development", "Demonstration", "Evaluation"),
+    "research_development": ("Development model", "Needs analysis", "Product design",
+                             "Expert validation", "Trial", "Data analysis"),
+    "classroom_action_research": ("Setting and subjects", "Cycle procedure",
+                                  "Success indicators", "Instruments and data analysis"),
+    "action_research": ("Context and partners", "Cycle structure", "Data collection",
+                        "Reflection"),
+}
+_DESIGNS = tuple(
+    replace(design, method_outline=_METHOD_OUTLINES.get(design.key, design.method_outline))
+    for design in _DESIGNS
+)
+
 DESIGNS: Mapping[str, ResearchDesign] = {design.key: design for design in _DESIGNS}
 RESEARCH_DESIGNS: tuple[str, ...] = tuple(DESIGNS)
 
@@ -824,18 +895,55 @@ def get_design(key: str) -> ResearchDesign:
     return DESIGNS[found]
 
 
+# Guideline names spelled out in full mention other designs by accident: every
+# PRISMA citation says "Systematic Reviews and Meta-Analyses".
+_GUIDELINE_EXPANSIONS = re.compile(
+    r"preferred reporting items for systematic reviews? and meta-?analy[sz]e?s"
+    r"(?:\s+extension for scoping reviews)?",
+    re.IGNORECASE,
+)
+
+
+def _detection_text(text: str) -> str:
+    return _GUIDELINE_EXPANSIONS.sub(" ", text[:20000])
+
+
+def _matches(design: ResearchDesign, head: str) -> tuple[list[str], list[str]]:
+    """Phrases matching ``design``'s strong and weak detection patterns."""
+
+    strong = [m.group(0) for m in re.finditer(design.detect, head, re.IGNORECASE)] if design.detect else []
+    weak = (
+        [m.group(0) for m in re.finditer(design.weak_detect, head, re.IGNORECASE)]
+        if design.weak_detect
+        else []
+    )
+    return strong, weak
+
+
+def _counted_hits(head: str) -> tuple[dict[str, int], dict[str, tuple[list[str], list[str]]]]:
+    matches = {design.key: _matches(design, head) for design in _DESIGNS}
+    strong_named = {
+        key for key, (strong, _) in matches.items()
+        if len(strong) >= DESIGNS[key].min_hits
+    }
+    hits: dict[str, int] = {}
+    for design in _DESIGNS:
+        strong, weak = matches[design.key]
+        # Weak evidence (an instrument, not a design) counts only when no other
+        # design of the same family names itself.
+        rivals = any(
+            key != design.key and DESIGNS[key].family == design.family for key in strong_named
+        )
+        count = len(strong) + (0 if rivals else len(weak))
+        if count and count >= design.min_hits:
+            hits[design.key] = count
+    return hits, matches
+
+
 def design_hits(text: str) -> dict[str, int]:
     """How often each design names itself in the opening of the manuscript."""
 
-    head = text[:20000]
-    hits: dict[str, int] = {}
-    for design in _DESIGNS:
-        if not design.detect:
-            continue
-        count = len(re.findall(design.detect, head, flags=re.IGNORECASE))
-        if count >= design.min_hits:
-            hits[design.key] = count
-    return hits
+    return _counted_hits(_detection_text(text))[0]
 
 
 def detect_research_design(text: str, *, family: str) -> str:
@@ -857,6 +965,70 @@ def detect_research_design(text: str, *, family: str) -> str:
     if children:
         return min(children, key=lambda key: (-hits[key], order[key]))
     return min(hits, key=lambda key: (-hits[key], order[key]))
+
+
+def explain_detection(text: str, *, family: str) -> dict[str, Any]:
+    """Why ``detect_research_design`` chose what it chose, for a human to check.
+
+    Lists every candidate design of ``family`` with its hit count and the
+    distinct phrases that matched, and rates the choice: ``low`` when nothing
+    specific was named (the family's general design applies) or when the
+    runner-up is named as often, ``medium`` for a single mention, ``high``
+    otherwise. A low rating is the cue to set ``research_design`` by hand.
+    """
+
+    chosen = detect_research_design(text, family=family)
+    counted_hits, matches = _counted_hits(_detection_text(text))
+    candidates: list[dict[str, Any]] = []
+    for design in _DESIGNS:
+        if design.family != family:
+            continue
+        strong, weak = matches[design.key]
+        found = strong + weak
+        if not found:
+            continue
+        phrases: list[str] = []
+        for phrase in found:
+            normalised = " ".join(phrase.lower().split())
+            if normalised not in phrases:
+                phrases.append(normalised)
+        candidates.append(
+            {
+                "key": design.key,
+                "label": design.label,
+                "hits": counted_hits.get(design.key, len(found)),
+                "counted": design.key in counted_hits,
+                "min_hits": design.min_hits,
+                "matched": phrases[:5],
+            }
+        )
+    candidates.sort(key=lambda item: (item["key"] != chosen, -item["hits"]))
+    counted = [item for item in candidates if item["counted"]]
+    chosen_hits = next((item["hits"] for item in counted if item["key"] == chosen), 0)
+    rivals = [
+        item["hits"]
+        for item in counted
+        if item["key"] != chosen and DESIGNS[chosen].parent != item["key"]
+    ]
+    if not chosen_hits:
+        confidence = "low"
+        reason = f"no specific {family} design is named; the general standard applies"
+    elif rivals and max(rivals) >= chosen_hits:
+        confidence = "low"
+        reason = "another design is named as often; check which one the study follows"
+    elif chosen_hits == 1:
+        confidence = "medium"
+        reason = "the design is named once"
+    else:
+        confidence = "high"
+        reason = f"the design is named {chosen_hits} times"
+    return {
+        "family": family,
+        "chosen": chosen,
+        "confidence": confidence,
+        "reason": reason,
+        "candidates": candidates,
+    }
 
 
 def design_catalogue() -> list[dict[str, Any]]:
@@ -885,6 +1057,12 @@ def design_method_brief(design: ResearchDesign) -> str:
             + "; ".join(name for name, _ in design.results_signals)
             + " (author-owned; describe only what the authors supplied)."
         )
+    if design.method_outline:
+        lines.append(
+            "- Suggested Method subsections, in order: "
+            + "; ".join(design.method_outline)
+            + "."
+        )
     if design.notes:
         lines.append(f"- Note: {design.notes}")
     return "\n".join(lines)
@@ -900,5 +1078,6 @@ __all__ = [
     "design_hits",
     "design_method_brief",
     "detect_research_design",
+    "explain_detection",
     "get_design",
 ]

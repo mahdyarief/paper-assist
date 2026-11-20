@@ -338,6 +338,7 @@ Parameter opsional untuk standar pelaporan:
 |---|---|
 | `paper_type` | `auto` (default), `review`, atau `empirical` (keluarga desain). Boleh juga langsung berisi kunci desain, mis. `rct` |
 | `research_design` | `auto` (default) atau kunci/alias desain (lihat tabel **Desain penelitian**). Menentukan standar pelaporan yang dipakai dimensi `method_rigour` |
+| `participant_flow` | Alur peserta CONSORT 2025 (RCT, kuasi-eksperimen) atau STROBE (observasional): objek JSON atau path workspace. CONSORT: `assessed`, `excluded`, `randomised`, `arms: {nama: {allocated, received, not_received, lost_to_follow_up, analysed, excluded_from_analysis}}` (nama kunci Indonesia seperti `dirandomisasi`, `dianalisis`, `kelompok` juga diterima). STROBE: `potentially_eligible`, `examined`, `eligible`, `included`, `followed_up`, `analysed`. Tanpa ini, dokumen count di `records_paths` dipakai |
 | `records_paths` | Dokumen count PRISMA (mis. `prisma_flow.json` dengan `records_identified`, `duplicates_removed`, `records_screened`, `records_excluded`, `reports_sought`, `reports_not_retrieved`, `reports_assessed`, `reports_excluded`, `studies_included`, serta rincian opsional `identified_by_database` / `exclusion_reasons`). Aritmetikanya dicek per tahap |
 | `journal_profile` / `required_declarations` | Deklarasi wajib dari profil jurnal (mis. `intl-elsevier-elsarticle`) atau daftar eksplisit: `competing_interests`, `funding`, `data_availability`, `ai_use`, `author_contributions`, `code_availability`, `ethics` |
 | `reference_policy` | `{recent_years, min_recent_share, min_primary_share, reference_year}`; default 10 tahun, 60%, 60% (bersifat anjuran, sesuaikan dengan jurnal) |
@@ -367,11 +368,11 @@ terdeteksi. Bila tebakan salah, set `research_design` secara eksplisit.
 | evidence synthesis | `bibliometric` | Bibliometric analysis | BIBLIO (preliminary, 20 items) |
 | evidence synthesis | `narrative_review` | Narrative or integrative review | SANRA (quality of narrative reviews, 6 items) |
 | quantitative | `rct` | Randomised controlled trial | CONSORT 2025 (30 items + flow diagram) |
-| quantitative | `quasi_experiment` | Quasi-experiment (non-randomised evaluation) | TREND statement |
+| quantitative | `quasi_experiment` | Quasi-experiment (non-randomised evaluation) | TREND statement (22 items) |
 | quantitative | `observational` | Observational study (cohort, case-control, cross-sectional) | STROBE (22 items) |
 | quantitative | `survey` | Survey / questionnaire study | CROSS (survey studies); CHERRIES for web surveys |
-| quantitative | `diagnostic_accuracy` | Diagnostic accuracy study | STARD 2015 |
-| quantitative | `prediction_model` | Prediction model (regression or machine learning) | TRIPOD+AI |
+| quantitative | `diagnostic_accuracy` | Diagnostic accuracy study | STARD 2015 (30 items + flow diagram) |
+| quantitative | `prediction_model` | Prediction model (regression or machine learning) | TRIPOD+AI (27 items) |
 | quantitative | `ml_experiment` | Machine learning / computational experiment | REFORMS (32 items, 8 modules); NeurIPS paper checklist |
 | quantitative | `empirical` | Empirical study (general) | General empirical reporting (ACM SIGSOFT General Standard; APA JARS-Quant) |
 | qualitative | `qualitative` | Qualitative study (interviews, focus groups, observation) | SRQR (21 items); COREQ (32 items) for interviews and focus groups |
@@ -387,7 +388,49 @@ apakah dikerjakan dengan baik, dan hanya mencakup item yang bisa terlihat dari
 naskah. Gunakan `design_lookup` untuk melihat item per desain, mencari lewat
 alias (`ptk`, `r&d`, `slr`, `kuasi-eksperimen`...), atau mendeteksi desain dari
 naskah. `writing_pack` menerima `research_design` dan menambahkan item pedoman
-itu ke brief section Method.
+itu ke brief section Method, beserta urutan subbab Method yang disarankan;
+kerangka naskah (paper maupun tesis) memuat urutan itu sebagai komentar di bawah
+bagian Metode.
+
+**Mengecek tebakan desain.** Deteksi `auto` dicatat di `reporting-checks.json`
+(`design_detection`) dan di `design_lookup`: kandidat, jumlah sebutan, frasa
+yang cocok, serta tingkat keyakinan (`high`, `medium`, `low`). `low` berarti
+tidak ada desain spesifik yang disebut atau ada desain lain yang disebut sama
+seringnya; set `research_design` secara eksplisit. Kepanjangan PRISMA
+("...Systematic Reviews and Meta-Analyses") tidak dihitung sebagai meta-analisis,
+dan kata instrumen (kuesioner, angket) hanya dihitung sebagai survei bila tidak
+ada desain lain yang disebut, sehingga R&D atau PTK yang memakai angket tidak
+terbaca sebagai survei.
+
+**Aritmetika alur peserta.** Untuk RCT dan kuasi-eksperimen (CONSORT 2025;
+TREND meminta alur yang sama) dicek: `randomised = assessed - excluded`, jumlah
+`allocated` semua lengan sama dengan `randomised`, `received + not_received =
+allocated` dan `analysed + excluded_from_analysis = allocated` per lengan, serta
+tidak ada yang dianalisis melebihi yang dialokasikan. Untuk studi observasional
+(STROBE butir 13) setiap tahap tidak boleh lebih besar dari tahap sebelumnya.
+Kirim lewat `participant_flow` (Research OS) atau `flow_path` (`quality_score`,
+yang juga menerima alur PRISMA untuk review).
+
+**Pemeriksaan analisis (anjuran, tidak mengubah skor).** Untuk desain
+kuantitatif, campuran, R&D, dan penelitian tindakan:
+
+- N-gain: kategori yang ditulis dicocokkan dengan batas Hake (1998): tinggi
+  g > 0,7, sedang 0,3 ≤ g ≤ 0,7, rendah g < 0,3; nilai di luar 0–1 (0–100%)
+  ditandai. Interpretasi efektivitas dalam persen (mis. "cukup efektif") tidak
+  dicek.
+- Aiken's V: nilai harus di 0–1, dan naskah harus menyebut jumlah validator
+  serta jumlah kategori penilaian, karena nilai kritis V bergantung pada
+  keduanya (Aiken 1985).
+- Uji prasyarat: uji-t, ANOVA, atau ANCOVA tanpa uji normalitas (Shapiro-Wilk,
+  Kolmogorov-Smirnov, Lilliefors) ditandai; perbandingan antarkelompok tanpa uji
+  homogenitas (Levene, Bartlett) atau uji Welch juga ditandai.
+
+**Kalibrasi.** Deteksi desain dan pemeriksaan analisis diuji pada 11 artikel dan
+bab metode open-access (PTK, R&D/ADDIE, kuasi-eksperimen, SLR, kualitatif,
+eksperimen ML). Kalibrasi ini memperbaiki tiga salah baca (SLR terbaca
+meta-analisis, R&D terbaca survei, apostrof melengkung pada "Aiken’s V").
+Naskah PDF perlu dikonversi ke LaTeX dengan heading `\section` dulu, karena
+penilaian per bagian membaca struktur LaTeX.
 
 ## Skills included
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..analysis_checks import check_analyses
 from ..reporting_checks import (
     FlowCheck,
 )
@@ -27,32 +28,55 @@ _REVIEW_REPRO_SIGNALS = DESIGNS["systematic_review"].repro_signals
 _EMPIRICAL_METHOD_SIGNALS = DESIGNS["empirical"].method_signals
 _EMPIRICAL_REPRO_SIGNALS = DESIGNS["empirical"].repro_signals
 _STATISTICS_SIGNALS = STATISTICS_SIGNALS
+# Designs whose analyses are numeric enough for the N-gain, Aiken's V and
+# prerequisite-test checks; qualitative designs are never asked for them.
+_QUANTITATIVE_CATEGORIES = (
+    "quantitative",
+    "mixed methods",
+    "design and development",
+    "action research",
+)
 
 
-def _flow_findings(flow: FlowCheck | None) -> tuple[float, list[Finding]]:
-    """PRISMA 2020 flow-diagram arithmetic as a score part and findings."""
+_FLOW_LABELS = {"prisma": "PRISMA 2020", "consort": "CONSORT 2025", "strobe": "STROBE"}
+_FLOW_HINTS = {
+    "prisma": (
+        "pass the flow document (e.g. prisma_flow.json with identified, "
+        "duplicates_removed, screened, excluded_screening, sought, "
+        "not_retrieved, assessed, excluded_fulltext, included)"
+    ),
+    "consort": (
+        "pass the participant flow (e.g. participant_flow.json with assessed, "
+        "excluded, randomised and arms: {name: {allocated, received, not_received, "
+        "lost_to_follow_up, analysed, excluded_from_analysis}})"
+    ),
+    "strobe": (
+        "pass the participant flow (e.g. participant_flow.json with "
+        "potentially_eligible, examined, eligible, included, followed_up, analysed)"
+    ),
+}
 
+
+def _flow_findings(
+    flow: FlowCheck | None, kind: str = "prisma"
+) -> tuple[float, list[Finding]]:
+    """Flow-diagram arithmetic (PRISMA, CONSORT or STROBE) as a score part and findings."""
+
+    label = _FLOW_LABELS.get(kind, kind.upper())
     if flow is None or not flow.available:
         return 0.5, [
             Finding(
                 dimension="method_rigour",
                 severity="info",
-                message="no PRISMA flow counts supplied; flow arithmetic not checked",
-                remedy=(
-                    "pass the flow document (e.g. prisma_flow.json with identified, "
-                    "duplicates_removed, screened, excluded_screening, sought, "
-                    "not_retrieved, assessed, excluded_fulltext, included)"
-                ),
+                message=f"no {label} flow counts supplied; flow arithmetic not checked",
+                remedy=_FLOW_HINTS.get(kind, "pass the flow counts"),
             )
         ]
     findings = [
         Finding(
             dimension="method_rigour",
             severity="critical",
-            message=(
-                f"PRISMA flow does not add up at {identity.name}: "
-                f"{identity.formula} = {identity.expected}, reported {identity.reported}"
-            ),
+            message=f"{label} flow does not add up at {identity.describe()}",
             remedy="correct the flow counts so every stage follows from the one before",
         )
         for identity in flow.identities
@@ -63,8 +87,8 @@ def _flow_findings(flow: FlowCheck | None) -> tuple[float, list[Finding]]:
             Finding(
                 dimension="method_rigour",
                 severity="info",
-                message="PRISMA flow stages not checkable: " + ", ".join(flow.unchecked),
-                remedy="report every count of the PRISMA 2020 flow diagram",
+                message=f"{label} flow stages not checkable: " + ", ".join(flow.unchecked),
+                remedy=f"report every count of the {label} flow diagram",
             )
         )
     if not flow.identities:
@@ -164,6 +188,27 @@ def _dimension_method(
                 )
             )
         third = len(reported) / len(results_signals) if raw_results.strip() else 0.0
+        if design.flow in ("consort", "strobe"):
+            # Half the results part is the reported items, half the participant
+            # flow adding up; unsupplied counts score neutral, as for PRISMA.
+            flow_part, flow_notes = _flow_findings(flow, design.flow)
+            findings.extend(flow_notes)
+            measurements["participant_flow"] = flow.to_dict() if flow else None
+            third = 0.5 * third + 0.5 * flow_part
+    if design.family == "empirical" and design.category in _QUANTITATIVE_CATEGORIES:
+        # Advisory: these issues are reported but do not move the score.
+        analyses = check_analyses(_strip_latex(text))
+        if analyses.applied:
+            measurements["analysis_checks"] = analyses.to_dict()
+            findings.extend(
+                Finding(
+                    dimension="method_rigour",
+                    severity=issue.severity,
+                    message=issue.message,
+                    remedy=issue.remedy,
+                )
+                for issue in analyses.issues
+            )
     if design.notes:
         measurements["notes"] = design.notes
     score = (

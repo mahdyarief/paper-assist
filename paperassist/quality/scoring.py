@@ -83,6 +83,7 @@ def score_manuscript(
     paper_type: str | None = "auto",
     research_design: str | None = "auto",
     prisma_flow: FlowCheck | None = None,
+    participant_flow: FlowCheck | None = None,
     declarations: DeclarationCheck | None = None,
     reference_audit: ReferenceAudit | None = None,
     locator_checks: Mapping[str, str] | None = None,
@@ -98,6 +99,8 @@ def score_manuscript(
     ``classroom_action_research`` -> the PTK cycle, ...); ``auto`` picks the
     most specific design the manuscript names. See
     :mod:`paperassist.research_designs`.
+    ``participant_flow`` is the CONSORT or STROBE count check from
+    :mod:`paperassist.participant_flow`, used when the design has that flow.
     ``declarations``, ``reference_audit``, ``prisma_flow`` and
     ``locator_checks`` come from :mod:`paperassist.reporting_checks`; when a
     caller omits them, declarations are detected from the text and the other
@@ -166,7 +169,12 @@ def score_manuscript(
             ledger, min_anchored=min_anchored, locator_checks=locator_checks
         ),
         _dimension_evidence(ledger, binding),
-        _dimension_method(text, paper_type=resolved_type, flow=prisma_flow, design=design),
+        _dimension_method(
+            text,
+            paper_type=resolved_type,
+            flow=prisma_flow if design.flow == "prisma" else participant_flow,
+            design=design,
+        ),
         _dimension_limitations(text),
         _dimension_declarations(declarations),
         _dimension_references(reference_audit),

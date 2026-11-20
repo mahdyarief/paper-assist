@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Participant flow, analysis checks and design follow-ups
+
+- CONSORT 2025 and STROBE participant-flow arithmetic
+  (`paperassist.participant_flow`): enrolment, allocation across arms,
+  intervention received, analysis per arm, and STROBE stages that may not grow.
+  RCTs and quasi-experiments (TREND) use the CONSORT flow, observational
+  studies the STROBE flow. `research_os` takes `participant_flow` (object or
+  path) or a count document; `quality_score` takes `flow_path` (PRISMA,
+  CONSORT or STROBE, whichever the design uses). `FlowIdentity` gains a
+  `relation` (`=` or `<=`) and `FlowCheck` a `kind`.
+- Advisory analysis checks (`paperassist.analysis_checks`) for quantitative,
+  mixed, R&D and action-research designs: N-gain categories against Hake's
+  bounds, Aiken's V range plus stated raters and rating categories, and
+  normality and homogeneity tests before t-tests, ANOVA and ANCOVA.
+- Design detection explains itself (`explain_detection`): candidates, matched
+  phrases and a confidence rating, in `design_lookup` and in
+  `reporting-checks.json` (`design_detection`).
+- Calibrated on open-access Indonesian articles: the spelled-out PRISMA name no
+  longer counts as a meta-analysis (which now needs two mentions), and
+  questionnaire words count towards a survey only when no other empirical
+  design is named (R&D and PTK use angket too).
+- Every design has a suggested Method outline, added to the writing brief and,
+  as comments, to the paper and thesis skeletons (`research_design`).
+- Verified item counts: STARD 2015 (30 items), TRIPOD+AI (27), TREND (22).
+
 ### Research designs beyond systematic reviews
 
 - New `paperassist.research_designs` registry: 20 designs in a small tree,

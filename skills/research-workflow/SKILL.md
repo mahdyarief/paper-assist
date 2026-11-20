@@ -56,7 +56,9 @@ ef`. Never write the
 
 1. `research_os` with `target_path` and, when available, `records_path`,
    `fulltext_root`, `bibliography_path` and `source_path`. For a review add
-   the PRISMA flow document to `records_paths`; set `research_design`
+   the PRISMA flow document to `records_paths` (or, for a trial or
+   observational study, the CONSORT/STROBE counts to `participant_flow`);
+   check `design_detection` in `reporting-checks.json`, and set `research_design`
    (`design_lookup` lists them: rct, survey, qualitative, design_science,
    research_development, classroom_action_research, ...) when `auto` guesses
    wrong, and `journal_profile` or `required_declarations` for the

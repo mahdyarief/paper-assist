@@ -34,7 +34,27 @@ def _declarations_block() -> str:
 _DECLARATIONS_BLOCK = _declarations_block()
 
 
-def _skeleton(title: str, protected_body: str = "") -> str:
+def _method_outline_comment(research_design: str | None) -> str:
+    """Suggested Method subsections for ``research_design``, as LaTeX comments.
+
+    They are comments, not headings: the Method task replaces its TODO marker,
+    and empty headings left below the drafted prose would only be noise. The
+    agent sees the outline here and in its brief, and writes the subsections.
+    """
+
+    if research_design in (None, "", "auto"):
+        return ""
+    from .research_designs import get_design
+
+    design = get_design(str(research_design))
+    if not design.method_outline:
+        return ""
+    lines = [f"% Suggested subsections ({design.guideline}):"]
+    lines += [f"%   - {name}" for name in design.method_outline]
+    return "\n".join(lines) + "\n"
+
+
+def _skeleton(title: str, protected_body: str = "", research_design: str | None = None) -> str:
     safe_title = str(title or "").strip() or "Untitled Research Manuscript"
     from .protected_blocks import PROTECTED_END, PROTECTED_START
 
@@ -63,6 +83,7 @@ def _skeleton(title: str, protected_body: str = "") -> str:
         "% TODO(agent): section-background\n"
         "\\section{Method}\n"
         "% TODO(agent): section-method\n"
+        + _method_outline_comment(research_design)
         + protected
         + "\\section{Discussion}\n"
         "% TODO(agent): section-discussion\n"
@@ -77,8 +98,10 @@ def _skeleton(title: str, protected_body: str = "") -> str:
     )
 
 
-def skeleton_document(title: str, protected_body: str = "") -> str:
-    return _skeleton(title, protected_body)
+def skeleton_document(
+    title: str, protected_body: str = "", research_design: str | None = None
+) -> str:
+    return _skeleton(title, protected_body, research_design)
 
 
 def _thesis_skeleton(
@@ -86,6 +109,7 @@ def _thesis_skeleton(
     *,
     thesis_type: str = "thesis",
     protected_body: str = "",
+    research_design: str | None = None,
 ) -> str:
     """Generic thesis skeleton (document_kind="thesis").
 
@@ -103,8 +127,10 @@ def _thesis_skeleton(
         f"{protected_body or '% Data/eksperimen yang disediakan penulis tetap tidak berubah.'}\n"
         f"{PROTECTED_END}\n"
     )
+    outline = _method_outline_comment(research_design).rstrip("\n")
     chapter_block = "\n".join(
         f"\\chapter{{{name}}}\\label{{ch:{_slug(name)}}}\n% TODO(agent): section-{_slug(name)}"
+        + (f"\n{outline}" if outline and "metod" in name.lower() else "")
         for name in THESIS_BARE_SECTIONS
     )
     type_note = {
@@ -146,9 +172,15 @@ def skeleton_document_kind(
     document_kind: str = "paper",
     thesis_type: str = "thesis",
     protected_body: str = "",
+    research_design: str | None = None,
 ) -> str:
     """Dispatch skeleton by document kind; thesis uses the chapter scaffold."""
 
     if _document_kind({"document_kind": document_kind}) == "thesis":
-        return _thesis_skeleton(title, thesis_type=thesis_type, protected_body=protected_body)
-    return _skeleton(title, protected_body)
+        return _thesis_skeleton(
+            title,
+            thesis_type=thesis_type,
+            protected_body=protected_body,
+            research_design=research_design,
+        )
+    return _skeleton(title, protected_body, research_design)

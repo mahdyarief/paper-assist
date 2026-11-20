@@ -195,15 +195,26 @@ class FlowIdentity:
     expected: int
     reported: int
     formula: str
+    # "=" : reported must equal expected; "<=" : reported may not exceed it
+    # (nobody can be analysed who was never allocated).
+    relation: str = "="
 
     @property
     def passed(self) -> bool:
+        if self.relation == "<=":
+            return self.reported <= self.expected
         return self.expected == self.reported
+
+    def describe(self) -> str:
+        if self.relation == "<=":
+            return f"{self.name}: reported {self.reported} exceeds {self.formula} = {self.expected}"
+        return f"{self.name}: {self.formula} = {self.expected}, reported {self.reported}"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "formula": self.formula,
+            "relation": self.relation,
             "expected": self.expected,
             "reported": self.reported,
             "passed": self.passed,
@@ -215,6 +226,8 @@ class FlowCheck:
     fields: Mapping[str, int] = field(default_factory=dict)
     identities: tuple[FlowIdentity, ...] = ()
     unchecked: tuple[str, ...] = ()
+    # Which diagram the counts belong to: "prisma", "consort" or "strobe".
+    kind: str = "prisma"
 
     @property
     def available(self) -> bool:
@@ -226,6 +239,7 @@ class FlowCheck:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "kind": self.kind,
             "available": self.available,
             "passed": self.passed,
             "fields": dict(self.fields),
