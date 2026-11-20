@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### Paper mode and Research OS reporting standards
+
+- `paper_type` (`auto` / `review` / `empirical`) for `research_os` and
+  `quality_score`. Reviews are judged on PRISMA 2020 / PRISMA-S signals (search
+  dates, full search strings, independent reviewers, risk-of-bias tool,
+  certainty of evidence) plus flow-diagram arithmetic; empirical papers on
+  design, data, procedure, metrics, analysis, baselines, validation and
+  statistical reporting (variability, effect or test, sample size).
+- Two new quality dimensions (14 in total): `declarations` (competing
+  interests, funding, data availability, AI-use disclosure per ICMJE/COPE,
+  CRediT, ethics when human participants are involved; required set per
+  `journal_profile` or `required_declarations`) and `references` (recency,
+  primary-literature share via `reference_policy`, retractions from a local
+  Retraction Watch CSV via `retraction_db_path`).
+- Research OS verifies `@locator` quotes against the bound full text; a quote
+  that is not in the source no longer counts as anchored. One grounding floor
+  (0.6) for the rubric and the writing gate.
+- Combined headings count for every kind they name ("Hasil dan Pembahasan",
+  "Results and Discussion"); "Experimental Setup" counts as method; a
+  Limitations subsection counts as a dedicated statement; figure paths resolve
+  against the manuscript folder.
+- Writing pack (paper): adds Discussion and Limitations, skips the
+  author-owned Experimental Setup / Results by default (they live in the
+  protected block and the gate refused them), and adds a protected,
+  author-owned Declarations block. The import gate now accepts numbers copied
+  from the protected block, rejects chat-assistant residue, and its rules say
+  which checks are mechanical.
+- Fixed: the "persen" unit pattern in the claim ledger held literal backspace
+  characters, so "45 persen" was treated as a count; the source-coverage gap
+  message stated the comparison backwards; the citations measurement used a
+  different denominator from the score. `reporting-checks.json` is a new
+  artifact.
+
+### Hardening
+
 - Security: workspace containment now rejects `..` segments. Previously
   `ws/../other.tex` passed the lexical check, so `writing_patch` could write a
   `.tex` file outside the workspace. `pack_task`/`writing_task` validate

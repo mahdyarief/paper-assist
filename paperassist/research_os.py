@@ -61,7 +61,17 @@ from .manuscript_quality import (
     score_manuscript,
 )
 from .path_safety import UnsafePathError, reject_symlink_components
-from .provenance_audit import extract_locators, load_locators_payload
+from .provenance_audit import DEFAULT_MIN_ANCHORED, extract_locators, load_locators_payload
+from .reporting_checks import (
+    ReferencePolicy,
+    audit_references,
+    check_declarations,
+    check_prisma_flow,
+    cited_keys,
+    load_retraction_dois,
+    resolve_paper_type,
+    verify_locator_quotes,
+)
 from .source_coverage import SourceCoverage, audit_source_coverage, format_source_coverage
 
 RESEARCH_OS_ROOT = Path(".paperassist") / "research-os"
@@ -282,6 +292,120 @@ def _json(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
+_TEXT_SUFFIXES = (".txt", ".md", ".tex")
+_LOCATOR_TEXT_BUDGET = 4_000_000
+
+
+def _bound_texts(
+    root: Path, payload: Mapping[str, Any], binding: CorpusBinding | None
+) -> dict[str, str]:
+    """Full text per bibliography key, for verifying locator quotes."""
+
+    if binding is None:
+        return {}
+    fulltext = payload.get("fulltext_root") or payload.get("pdf_root")
+    if not fulltext:
+        return {}
+    base = (root / str(fulltext)).resolve()
+    if not base.is_relative_to(root):
+        return {}
+    texts: dict[str, str] = {}
+    for record in binding.records:
+        if not (record.bib_key and record.text_path):
+            continue
+        path = (base / record.text_path).resolve()
+        if not path.is_relative_to(base) or not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        try:
+            if suffix in _TEXT_SUFFIXES:
+                texts[record.bib_key] = path.read_text(encoding="utf-8", errors="replace")
+            elif suffix == ".pdf":
+                from .references import _extract_pdf
+
+                body, *_ = _extract_pdf(path.read_bytes(), budget_bytes=_LOCATOR_TEXT_BUDGET)
+                if body.strip():
+                    texts[record.bib_key] = body
+        except OSError:
+            continue
+    return texts
+
+
+def _reporting_checks(
+    root: Path,
+    payload: Mapping[str, Any],
+    *,
+    manuscript: str,
+    records: Sequence[Mapping[str, Any]],
+    study_count: int,
+    bibliography_text: str | None,
+    binding: CorpusBinding | None,
+    locators: Sequence[Any] | None,
+) -> dict[str, Any]:
+    """Run the reporting-standard checks and return their results by name."""
+
+    try:
+        paper_type = resolve_paper_type(
+            payload.get("paper_type"), manuscript, study_count=study_count
+        )
+    except ValueError as exc:
+        raise ResearchOSError(str(exc)) from exc
+
+    flow = check_prisma_flow([record for record in records if record.get("_counts")])
+
+    required = payload.get("required_declarations")
+    profile_id = payload.get("journal_profile")
+    if required is None and profile_id:
+        from .journal_profiles import PROFILES
+
+        profile = next((p for p in PROFILES if p.profile_id == profile_id), None)
+        if profile is None:
+            raise ResearchOSError(f"unknown journal_profile: {profile_id}")
+        required = list(profile.required_declarations) or None
+    try:
+        declarations = check_declarations(
+            manuscript, required=required, paper_type=paper_type
+        )
+        policy = ReferencePolicy.from_payload(payload.get("reference_policy"))
+    except (TypeError, ValueError) as exc:
+        raise ResearchOSError(str(exc)) from exc
+
+    retractions = None
+    if payload.get("retraction_db_path"):
+        csv_path = _resolve_source(root, payload["retraction_db_path"], what="retraction database")
+        try:
+            retractions = load_retraction_dois(
+                csv_path.read_text(encoding="utf-8", errors="replace")
+            )
+        except ValueError as exc:
+            raise ResearchOSError(str(exc)) from exc
+
+    reference_audit = None
+    if bibliography_text:
+        from .corpus_binder import parse_bib_entries
+
+        cited = cited_keys(manuscript)
+        reference_audit = audit_references(
+            parse_bib_entries(bibliography_text),
+            cited_keys=cited,
+            policy=policy,
+            retractions=retractions,
+        )
+
+    locator_checks = None
+    texts = _bound_texts(root, payload, binding)
+    if locators and texts:
+        locator_checks = verify_locator_quotes(locators, texts)
+
+    return {
+        "paper_type": paper_type,
+        "prisma_flow": flow if paper_type == "review" else None,
+        "declarations": declarations,
+        "reference_audit": reference_audit,
+        "locator_checks": locator_checks,
+    }
+
+
 def run_research_os(
     workspace: str | Path,
     payload: Mapping[str, Any],
@@ -338,6 +462,17 @@ def run_research_os(
     # size the reporting floor off the wrong number.
     study_count = len(study_records)
 
+    checks = _reporting_checks(
+        root,
+        payload,
+        manuscript=manuscript,
+        records=records,
+        study_count=study_count,
+        bibliography_text=bibliography_text,
+        binding=binding,
+        locators=locators,
+    )
+
     try:
         quality = score_manuscript(
             manuscript,
@@ -346,9 +481,15 @@ def run_research_os(
             bibliography_entries=bibliography_entries,
             bibliography_text=bibliography_text,
             depth_target=int(payload.get("depth_target") or 500),
-            min_anchored=float(payload.get("min_anchored") or 0.6),
+            min_anchored=float(payload.get("min_anchored") or DEFAULT_MIN_ANCHORED),
             allow_em_dash=bool(payload.get("allow_em_dash", False)),
             corpus_size=study_count,
+            paper_type=checks["paper_type"],
+            prisma_flow=checks["prisma_flow"],
+            declarations=checks["declarations"],
+            reference_audit=checks["reference_audit"],
+            locator_checks=checks["locator_checks"],
+            asset_root=str(manuscript_path.parent),
         )
     except QualityError as exc:
         raise ResearchOSError(str(exc)) from exc
@@ -417,6 +558,22 @@ def run_research_os(
     )
     artifacts["revision_plan"] = _write(
         output_dir / "revision-plan.json", _json({"plan": list(plan)})
+    )
+    artifacts["reporting_checks"] = _write(
+        output_dir / "reporting-checks.json",
+        _json(
+            {
+                "paper_type": checks["paper_type"],
+                "prisma_flow": checks["prisma_flow"].to_dict()
+                if checks["prisma_flow"]
+                else None,
+                "declarations": checks["declarations"].to_dict(),
+                "references": checks["reference_audit"].to_dict()
+                if checks["reference_audit"]
+                else None,
+                "locator_quotes": checks["locator_checks"],
+            }
+        ),
     )
 
     if coverage is not None:
@@ -491,7 +648,7 @@ def _coverage_gaps(coverage: SourceCoverage) -> list[dict[str, Any]]:
             {
                 "section": "manuscript",
                 "status": "unaccounted_numbers",
-                "message": "Numbers appear in manuscript but not in source",
+                "message": "Numbers asserted in the research source do not appear in the manuscript",
                 "expected_numbers": [],
                 "found_numbers": list(coverage.unaccounted_numbers),
             }

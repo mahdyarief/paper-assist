@@ -725,7 +725,7 @@ def _quantity_units(quantity: str) -> tuple[str, ...]:
     confirm "15 hari". A bare number may be either.
     """
 
-    if "%" in quantity or re.search(r"persen", quantity, re.IGNORECASE):
+    if "%" in quantity or re.search(r"\bpersen\b", quantity, re.IGNORECASE):
         return (_UNIT_PERCENT,)
     digits = re.sub(r"[^\d.,]", "", quantity)
     # A decimal is a measurement, so a mean or a recorded value can confirm it;

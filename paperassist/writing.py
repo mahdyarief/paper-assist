@@ -62,6 +62,62 @@ _QUANTITATIVE_RESULT = re.compile(
     r"[^.\n]{0,80}\d|\d+(?:\.\d+)?\s*\\?%|\b(?:outperform|state-of-the-art)\b)",
     re.IGNORECASE,
 )
+# Chat-assistant residue and writing-process narration. Disclosure of AI use is
+# required by ICMJE/COPE, but it is the authors' statement in the Declarations
+# block, never a sentence the harness slips into the argument.
+_ASSISTANT_RESIDUE = re.compile(
+    r"\bas an ai\b|\bas a(?:n)? (?:large )?language model\b|\bi(?:'m| am) an ai\b|"
+    r"\bhere is the (?:revised|updated|requested|rewritten)\b|\bi hope this helps\b|"
+    r"\bsebagai (?:sebuah )?(?:model bahasa|asisten ai|kecerdasan buatan)\b|"
+    r"\bberikut (?:adalah |ini adalah )?(?:versi|revisi|draf) (?:yang )?(?:telah|sudah)\b|"
+    # "Semoga bermanfaat" closes many thesis forewords, so only the chat form.
+    r"\bsemoga membantu\b",
+    re.IGNORECASE,
+)
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n\s*\n")
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
+_NON_NUMERIC_COMMANDS = re.compile(
+    r"\\(?:cite[a-zA-Z*]*|ref|eqref|autoref|cref|Cref|label|url|href)\s*(?:\[[^\]]*\]\s*)*\{[^{}]*\}"
+)
+_REF_TARGET = re.compile(r"\\(?:ref|eqref|autoref|cref|Cref)\s*\{([^{}]*)\}")
+_LABEL_TARGET = re.compile(r"\\label\s*\{([^{}]*)\}")
+_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
+
+
+def _strip_comments(text: str) -> str:
+    return re.sub(r"(?<!\\)%.*$", " ", text, flags=re.M)
+
+
+def _numbers(text: str) -> set[str]:
+    cleaned = _YEAR.sub(" ", _NON_NUMERIC_COMMANDS.sub(" ", text))
+    return {number.replace(",", ".") for number in _NUMBER.findall(cleaned)}
+
+
+def _unsupported_result_sentences(prose: str, protected: str) -> list[str]:
+    """Result-like sentences outside the protected block that it does not back.
+
+    A Discussion must be able to restate a result the authors reported. A
+    sentence is accepted when every number in it already appears in the
+    protected experiment block, or when it states no number and points at a
+    table or figure defined there; anything else would be a new result.
+    """
+
+    protected_numbers = _numbers(protected)
+    protected_labels = set(_LABEL_TARGET.findall(protected))
+    offending: list[str] = []
+    for sentence in _SENTENCE_BREAK.split(_strip_comments(prose)):
+        if not _QUANTITATIVE_RESULT.search(sentence):
+            continue
+        numbers = _numbers(sentence)
+        if numbers:
+            if numbers <= protected_numbers:
+                continue
+        elif set(_REF_TARGET.findall(sentence)) & protected_labels:
+            continue
+        offending.append(" ".join(sentence.split()))
+    return offending
+
+
 _SAFE_RUN_ID = re.compile(r"[^a-zA-Z0-9_.-]+")
 _BRIEF_FIELDS = ("title", "topic", "abstract", "instructions")
 
@@ -211,9 +267,26 @@ class WritingEngine:
         if candidate_blocks != protected_blocks:
             raise WritingSafetyError("generated TeX changed the protected experiment block")
         prose = _without_protected_blocks(candidate)
-        if _EXPERIMENT_SECTION.search(prose) or _QUANTITATIVE_RESULT.search(prose):
+        if _EXPERIMENT_SECTION.search(prose):
             raise WritingSafetyError(
-                "writing-only output introduced an unprotected experimental claim"
+                "writing-only output introduced an unprotected experimental section; "
+                "Experimental Setup and Results are author-owned and live inside the "
+                "protected experiment block"
+            )
+        invented = _unsupported_result_sentences(prose, "\n".join(protected_blocks))
+        if invented:
+            raise WritingSafetyError(
+                "writing-only output introduced an unprotected experimental claim: "
+                + invented[0][:200]
+                + " (restate only numbers that appear in the protected block, or "
+                "refer to its tables and figures with \\ref)"
+            )
+        residue = _ASSISTANT_RESIDUE.search(_strip_comments(prose))
+        if residue:
+            raise WritingSafetyError(
+                "draft contains assistant or writing-process narration: "
+                f"{residue.group(0)!r}; AI-use disclosure belongs in the author-owned "
+                "Declarations block"
             )
         cited = {
             key.strip()

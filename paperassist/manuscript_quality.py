@@ -24,24 +24,36 @@ from typing import Any
 from .anti_ai_style import detect_formulaic_phrases, is_uniform_rhythm, sentence_length_cv
 from .claim_ledger import ClaimLedger
 from .corpus_binder import CorpusBinding
+from .provenance_audit import DEFAULT_MIN_ANCHORED
+from .reporting_checks import (
+    LOCATOR_NOT_FOUND,
+    DeclarationCheck,
+    FlowCheck,
+    ReferenceAudit,
+    resolve_paper_type,
+)
 
 QUALITY_SCHEMA = "paperassist.manuscript-quality/v1"
 GRADE_SCHEMA = "paperassist.quality-grade/v1"
 
 # Weights sum to 1.0. Provenance and evidence carry the largest share because
 # they are the dimensions a reviewer cannot verify without the underlying data.
+# Declarations and references are what an editor checks before sending a paper
+# to review (ICMJE/COPE disclosure, publisher declarations, reference quality).
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "structure": 0.08,
-    "abstract": 0.10,
-    "depth": 0.09,
-    "citations": 0.10,
+    "structure": 0.07,
+    "abstract": 0.09,
+    "depth": 0.08,
+    "citations": 0.09,
     "provenance": 0.18,
-    "evidence": 0.14,
+    "evidence": 0.13,
     "method_rigour": 0.12,
-    "limitations": 0.06,
-    "prose_style": 0.04,
+    "limitations": 0.05,
+    "declarations": 0.04,
+    "references": 0.04,
+    "prose_style": 0.03,
     "tables_figures": 0.03,
-    "readability": 0.04,
+    "readability": 0.03,
     "formulaic_prose": 0.02,
 }
 
@@ -63,7 +75,18 @@ _SECTION_ALIASES: dict[str, tuple[str, ...]] = {
     "abstract": ("abstract", "abstrak"),
     "introduction": ("introduction", "pendahuluan"),
     "related": ("related work", "literature", "tinjauan", "state of the art"),
-    "method": ("method", "metode", "materials and methods", "methodology"),
+    "method": (
+        "method",
+        "metode",
+        "materials and methods",
+        "methodology",
+        "experimental setup",
+        "experimental design",
+        "experiment setup",
+        "research design",
+        "desain penelitian",
+        "rancangan penelitian",
+    ),
     "results": ("result", "hasil", "findings", "temuan"),
     "discussion": ("discussion", "pembahasan", "diskusi"),
     "conclusion": ("conclusion", "kesimpulan", "closing"),
@@ -93,22 +116,45 @@ _BIBLIOGRAPHY_RE = re.compile(
 # penyaringan, seleksi -> penyeleksian, telusur -> penelusuran. Matching the bare
 # root therefore misses the forms academic prose actually uses. The \b-anchored
 # English alternatives stay word-initial so "research" is not read as "search".
-_METHOD_SIGNALS: tuple[tuple[str, str], ...] = (
+_REVIEW_METHOD_SIGNALS: tuple[tuple[str, str], ...] = (
     ("search strategy", r"\b(?:search|query|string)\w*|\b\w*(?:cari|telusur|nelusur)\w*"),
     ("database enumeration", r"\b\w*(?:scopus|pubmed|web of science|ieee|scholar|garuda|database|basis data|pangkalan data)\w*"),
+    ("search dates", r"last searched|search(?:es)? (?:was|were )?(?:conducted|performed|run) (?:on|in|between)|search date|tanggal pencarian|dilakukan pada|hingga (?:\d|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)|up to (?:\d|january|february|march|april|may|june|july|august|september|october|november|december)|as of"),
     ("inclusion criteria", r"\b\w*(?:inclusion|inklusi|eligib|kriteria)\w*"),
     ("exclusion criteria", r"\b\w*(?:exclusion|eksklusi)\w*"),
     ("screening process", r"\b\w*(?:screen|skrin|saring|yaring|seleksi|yeleksi|tapis)\w*"),
+    ("independent reviewers", r"two (?:independent )?reviewers|independent(?:ly)?|dua (?:orang )?(?:reviewer|peninjau|penilai)|secara independen|kappa|inter-rater|antar-?penilai"),
     ("extraction procedure", r"\b\w*(?:extraction|ekstraksi|charting|penilaian)\w*"),
-    ("quality appraisal", r"\b\w*(?:quality|kualitas|risk of bias|bias)\w*"),
+    ("risk-of-bias appraisal", r"risk of bias|risiko bias|\brob\s*-?2\b|robins|\bcasp\b|\bjbi\b|\bmmat\b|quadas|newcastle|amstar|critical appraisal|quality (?:appraisal|assessment)|penilaian kualitas"),
+    ("certainty of evidence", r"certainty of (?:the )?evidence|\bgrade\b (?:approach|framework|assessment)|cerqual|kepastian bukti|confidence in (?:the )?evidence"),
     ("synthesis method", r"\b\w*(?:synthesis|sintesis|meta-analy)\w*"),
 )
-_REPRO_SIGNALS: tuple[tuple[str, str], ...] = (
-    ("data availability", r"data availability|ketersediaan data|dataset tersedia"),
-    ("code availability", r"code availability|kode tersedia|repositori"),
-    ("search date", r"search date|tanggal pencarian|hingga \w+|as of"),
-    ("protocol or registration", r"protocol|protokol|registr|osf|prospero|prisma"),
+_REVIEW_REPRO_SIGNALS: tuple[tuple[str, str], ...] = (
+    ("data availability", r"data availability|ketersediaan data|dataset tersedia|extraction (?:form|data) (?:is|are) available"),
+    ("protocol or registration", r"protocol|protokol|registr|\bosf\b|prospero"),
+    ("full search strings", r"search strings?|query strings?|string pencarian|full search strateg|appendix|lampiran|supplementary"),
     ("prisma reporting", r"prisma"),
+)
+_EMPIRICAL_METHOD_SIGNALS: tuple[tuple[str, str], ...] = (
+    ("research design", r"\b(?:design|desain|rancangan|approach|pendekatan)\w*"),
+    ("data or participants", r"\b\w*(?:dataset|data set|sampel|sample|participant|partisipan|responden|respondent|subjek|subject|populasi|population|corpus|korpus)\w*"),
+    ("procedure or instrument", r"\b\w*(?:procedure|prosedur|instrumen|instrument|kuesioner|questionnaire|setup|implementasi|implementation|pipeline)\w*"),
+    ("variables or metrics", r"\b\w*(?:metric|metrik|variabel|variable|measure|ukuran|indikator|indicator|evaluat|evaluasi)\w*"),
+    ("analysis method", r"\b\w*(?:analysis|analisis|statistic|statistik|regression|regresi|anova|t-test|uji)\w*"),
+    ("baseline or comparison", r"\b\w*(?:baseline|pembanding|comparison|perbandingan|control group|kelompok kontrol|benchmark)\w*"),
+    ("validation", r"\b\w*(?:validation|validasi|cross-validation|reliabilit|validity|validitas|held-out|test set|data uji)\w*"),
+)
+_EMPIRICAL_REPRO_SIGNALS: tuple[tuple[str, str], ...] = (
+    ("data availability", r"data availability|ketersediaan data|data (?:are|is) available|dataset tersedia|publicly available"),
+    ("code availability", r"code availability|source code|kode sumber|github\.com|gitlab\.com|zenodo|repositori"),
+    ("parameter settings", r"hyperparameter|hiperparameter|random seed|\bseed\b|learning rate|parameter settings?|konfigurasi|configuration"),
+    ("computing environment", r"\bgpu\b|\bcpu\b|hardware|perangkat keras|software version|versi|python \d|pytorch|tensorflow|\br \d|spss|stata"),
+)
+# Uncertainty and effect reporting in the results (APA/CONSORT-style practice).
+_STATISTICS_SIGNALS: tuple[tuple[str, str], ...] = (
+    ("uncertainty", r"confidence interval|interval kepercayaan|\bci\b|standard deviation|simpangan baku|standard error|\bstd\b|\bsd\b|\\pm|±"),
+    ("significance or effect", r"p-?value|nilai p|\bp\s*[<=>]|effect size|ukuran efek|cohen|odds ratio|\bor\b\s*=|hazard ratio"),
+    ("sample size", r"\bn\s*=\s*\d|sample size|ukuran sampel|jumlah sampel|\d+ (?:participants|responden|samples|sampel)"),
 )
 _WORD_RE = re.compile(r"[A-Za-z\u00C0-\u024F0-9'’\-]+")
 # House style rules apply to running prose only. A table cell that marks a
@@ -174,6 +220,7 @@ class Dimension:
 @dataclass(frozen=True)
 class QualityReport:
     dimensions: tuple[Dimension, ...] = ()
+    paper_type: str = "review"
     score: float = 0.0
     grade: str = "E"
     recommendation: str = "reject"
@@ -209,6 +256,7 @@ class QualityReport:
             "grade_schema": GRADE_SCHEMA,
             "digest": self.digest,
             "source_sha256": self.source_sha256,
+            "paper_type": self.paper_type,
             "score": round(self.score, 4),
             "grade": self.grade,
             "recommendation": self.recommendation,
@@ -232,12 +280,43 @@ def _strip_latex(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _section_kind(title: str) -> str | None:
+def _section_kinds(title: str) -> tuple[str, ...]:
+    """Every kind a heading names.
+
+    A combined heading is common: "Hasil dan Pembahasan" is the standard
+    Indonesian journal section and "Results and Discussion" its English twin.
+    Returning only the first match would report a discussion as missing from
+    every such paper.
+    """
+
     lowered = title.lower()
-    for candidate, aliases in _SECTION_ALIASES.items():
-        if any(alias in lowered for alias in aliases):
-            return candidate
-    return None
+    return tuple(
+        candidate
+        for candidate, aliases in _SECTION_ALIASES.items()
+        if any(alias in lowered for alias in aliases)
+    )
+
+
+def _section_kind(title: str) -> str | None:
+    kinds = _section_kinds(title)
+    return kinds[0] if kinds else None
+
+
+def _heading_body(text: str, kind: str) -> str:
+    """Body under any heading level that names ``kind``, up to the next heading.
+
+    Used where a subsection is a legitimate home, such as a Limitations
+    subsection inside the Discussion.
+    """
+
+    headings = list(_SECTION_RE.finditer(text))
+    parts: list[str] = []
+    for index, match in enumerate(headings):
+        if kind not in _section_kinds(match.group(2).strip()):
+            continue
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        parts.append(text[match.end():end])
+    return _without_floats("\n".join(parts))
 
 
 def _section_bodies(text: str) -> dict[str, str]:
@@ -257,30 +336,27 @@ def _section_bodies(text: str) -> dict[str, str]:
 
     entries = list(_SECTION_RE.finditer(text))
     bodies: dict[str, list[str]] = {}
-    current: str | None = None
+    current: tuple[str, ...] = ()
     start = 0
+
+    def close(end: int) -> None:
+        for kind in current:
+            bodies.setdefault(kind, []).append(text[start:end])
+
     for match in entries:
         # A subsection heading never closes the section around it, even when its
         # title happens to contain a word such as "limitations": that paragraph
         # still argues the discussion it sits in.
         if match.group(1).lower() in ("subsection", "subsubsection"):
             continue
-        kind = _section_kind(match.group(2).strip())
-        if kind is None:
-            # An unrecognised top-level heading opens a new part of the document,
-            # so it closes the section before it. Otherwise an appendix would be
-            # counted as the conclusion's own prose.
-            if current is not None:
-                bodies.setdefault(current, []).append(text[start:match.start()])
-            current = None
-            start = match.end()
-            continue
-        if current is not None:
-            bodies.setdefault(current, []).append(text[start:match.start()])
-        current = kind
+        kinds = _section_kinds(match.group(2).strip())
+        # An unrecognised top-level heading opens a new part of the document,
+        # so it closes the section before it. Otherwise an appendix would be
+        # counted as the conclusion's own prose.
+        close(match.start())
+        current = kinds
         start = match.end()
-    if current is not None:
-        bodies.setdefault(current, []).append(text[start:])
+    close(len(text))
     return {
         kind: _without_floats("\n".join(parts)) for kind, parts in bodies.items()
     }
@@ -591,7 +667,8 @@ def _dimension_citations(
         measurements={
             "cited_keys": len(set(cited)),
             "reference_entries": reference_count,
-            "evidence_claims_with_citation": f"{cited_claims}/{len(evidence_claims)}",
+            # Derived claims are excluded from both sides, as in the score.
+            "citable_claims_with_citation": f"{cited_claims}/{len(citable_claims)}",
             "corpus_records": corpus_size,
             "corpus_coverage": round(coverage, 4),
             "unresolved_keys": unresolved,
@@ -600,12 +677,44 @@ def _dimension_citations(
     )
 
 
-def _dimension_provenance(ledger: ClaimLedger, *, min_anchored: float) -> Dimension:
+def _dimension_provenance(
+    ledger: ClaimLedger,
+    *,
+    min_anchored: float,
+    locator_checks: Mapping[str, str] | None = None,
+) -> Dimension:
     summary = ledger.summary()
     evidence = summary["evidence_channel"]
     anchored = summary["grounded"] + summary["attributed"] + summary["derived"]
-    ratio = anchored / evidence if evidence else 1.0
     findings: list[Finding] = []
+    # A locator whose quote does not occur in the cited work's own text anchors
+    # nothing: it reads as provenance while pointing at words that are not there.
+    failed_keys = {
+        key for key, status in (locator_checks or {}).items() if status == LOCATOR_NOT_FOUND
+    }
+    contradicted = [
+        claim
+        for claim in ledger.claims
+        if claim.status == "grounded"
+        and claim.locator_keys
+        and all(key in failed_keys for key in claim.locator_keys)
+    ]
+    if contradicted:
+        anchored -= len(contradicted)
+        findings.append(
+            Finding(
+                dimension="provenance",
+                severity="critical",
+                message=(
+                    f"{len(contradicted)} grounded sentence(s) cite a locator quote that "
+                    "does not occur in the bound full text: "
+                    + ", ".join(sorted(failed_keys)[:5])
+                ),
+                remedy="copy the quote verbatim from the source, or fix the locator key",
+                line=contradicted[0].line_start,
+            )
+        )
+    ratio = anchored / evidence if evidence else 1.0
     unsupported = summary["unsupported"]
     if unsupported:
         findings.append(
@@ -660,7 +769,10 @@ def _dimension_provenance(ledger: ClaimLedger, *, min_anchored: float) -> Dimens
             "attributed": summary["attributed"],
             "derived": summary["derived"],
             "unsupported": unsupported,
-            "anchored_ratio": summary["anchored_ratio"],
+            "anchored_ratio": round(ratio, 4),
+            "ledger_anchored_ratio": summary["anchored_ratio"],
+            "locator_quotes": dict(locator_checks) if locator_checks else None,
+            "locator_quotes_not_found": sorted(failed_keys),
         },
         findings=tuple(findings),
     )
@@ -730,7 +842,53 @@ def _dimension_evidence(
     )
 
 
-def _dimension_method(text: str) -> Dimension:
+def _flow_findings(flow: FlowCheck | None) -> tuple[float, list[Finding]]:
+    """PRISMA 2020 flow-diagram arithmetic as a score part and findings."""
+
+    if flow is None or not flow.available:
+        return 0.5, [
+            Finding(
+                dimension="method_rigour",
+                severity="info",
+                message="no PRISMA flow counts supplied; flow arithmetic not checked",
+                remedy=(
+                    "pass the flow document (e.g. prisma_flow.json with identified, "
+                    "duplicates_removed, screened, excluded_screening, sought, "
+                    "not_retrieved, assessed, excluded_fulltext, included)"
+                ),
+            )
+        ]
+    findings = [
+        Finding(
+            dimension="method_rigour",
+            severity="critical",
+            message=(
+                f"PRISMA flow does not add up at {identity.name}: "
+                f"{identity.formula} = {identity.expected}, reported {identity.reported}"
+            ),
+            remedy="correct the flow counts so every stage follows from the one before",
+        )
+        for identity in flow.identities
+        if not identity.passed
+    ]
+    if flow.unchecked:
+        findings.append(
+            Finding(
+                dimension="method_rigour",
+                severity="info",
+                message="PRISMA flow stages not checkable: " + ", ".join(flow.unchecked),
+                remedy="report every count of the PRISMA 2020 flow diagram",
+            )
+        )
+    if not flow.identities:
+        return 0.5, findings
+    passed = sum(1 for identity in flow.identities if identity.passed)
+    return passed / len(flow.identities), findings
+
+
+def _dimension_method(
+    text: str, *, paper_type: str = "review", flow: FlowCheck | None = None
+) -> Dimension:
     bodies = _section_bodies(text)
     method = bodies.get("method", "")
     lowered = _strip_latex(method).lower()
@@ -748,11 +906,15 @@ def _dimension_method(text: str) -> Dimension:
             name="method_rigour",
             score=0.0,
             weight=DEFAULT_WEIGHTS["method_rigour"],
-            measurements={"signals": [], "repro": []},
+            measurements={"paper_type": paper_type, "signals": [], "repro": []},
             findings=tuple(findings),
         )
-    covered = [name for name, pattern in _METHOD_SIGNALS if re.search(pattern, lowered)]
-    missing = [name for name, _ in _METHOD_SIGNALS if name not in covered]
+    if paper_type == "review":
+        method_signals, repro_signals = _REVIEW_METHOD_SIGNALS, _REVIEW_REPRO_SIGNALS
+    else:
+        method_signals, repro_signals = _EMPIRICAL_METHOD_SIGNALS, _EMPIRICAL_REPRO_SIGNALS
+    covered = [name for name, pattern in method_signals if re.search(pattern, lowered)]
+    missing = [name for name, _ in method_signals if name not in covered]
     for name in missing:
         findings.append(
             Finding(
@@ -763,15 +925,45 @@ def _dimension_method(text: str) -> Dimension:
             )
         )
     whole = _strip_latex(text).lower()
-    repro = [name for name, pattern in _REPRO_SIGNALS if re.search(pattern, whole)]
-    score = 0.75 * (len(covered) / len(_METHOD_SIGNALS)) + 0.25 * (
-        len(repro) / len(_REPRO_SIGNALS)
+    repro = [name for name, pattern in repro_signals if re.search(pattern, whole)]
+    measurements: dict[str, Any] = {
+        "paper_type": paper_type,
+        "signals": covered,
+        "missing": missing,
+        "repro": repro,
+    }
+    if paper_type == "review":
+        third, flow_notes = _flow_findings(flow)
+        findings.extend(flow_notes)
+        measurements["prisma_flow"] = flow.to_dict() if flow else None
+    else:
+        results = _strip_latex(bodies.get("results", "")).lower()
+        stats = [name for name, pattern in _STATISTICS_SIGNALS if re.search(pattern, results)]
+        measurements["statistics"] = stats
+        if results and len(stats) < len(_STATISTICS_SIGNALS):
+            absent = [name for name, _ in _STATISTICS_SIGNALS if name not in stats]
+            findings.append(
+                Finding(
+                    dimension="method_rigour",
+                    severity="warning",
+                    message="results do not report: " + ", ".join(absent),
+                    remedy=(
+                        "report variability (SD/CI), effect size or test result, and "
+                        "sample size beside each headline number"
+                    ),
+                )
+            )
+        third = len(stats) / len(_STATISTICS_SIGNALS) if results else 0.0
+    score = (
+        0.6 * (len(covered) / len(method_signals))
+        + 0.2 * (len(repro) / len(repro_signals))
+        + 0.2 * third
     )
     return Dimension(
         name="method_rigour",
         score=_clamp(score),
         weight=DEFAULT_WEIGHTS["method_rigour"],
-        measurements={"signals": covered, "missing": missing, "repro": repro},
+        measurements=measurements,
         findings=tuple(findings),
     )
 
@@ -781,6 +973,13 @@ def _dimension_limitations(text: str) -> Dimension:
     lowered = text.lower()
     findings: list[Finding] = []
     present = "limitations" in bodies
+    if not present:
+        # A Limitations subsection inside the Discussion is a dedicated,
+        # findable statement too, and is common in journal templates.
+        nested = _heading_body(text, "limitations")
+        if nested.strip():
+            bodies = {**bodies, "limitations": nested}
+            present = True
     if not present:
         findings.append(
             Finding(
@@ -807,6 +1006,138 @@ def _dimension_limitations(text: str) -> Dimension:
         score=_clamp(score),
         weight=DEFAULT_WEIGHTS["limitations"],
         measurements={"section_present": present, "explicit_statement": has_threats},
+        findings=tuple(findings),
+    )
+
+
+_DECLARATION_REMEDIES: dict[str, str] = {
+    "competing_interests": 'state competing interests, or "none" (ICMJE; publisher declarations)',
+    "funding": "name each funder and grant number, or state that no funding was received",
+    "data_availability": "say where the data can be obtained, or why it cannot be shared",
+    "ai_use": (
+        "disclose which AI tools were used, for what, and that the authors take "
+        "responsibility (ICMJE, COPE); state none if no tool was used"
+    ),
+    "author_contributions": "list each author's CRediT roles (ANSI/NISO Z39.104-2022)",
+    "code_availability": "link the code or state why it is not released",
+    "ethics": "report ethics approval and informed consent for human participants",
+}
+
+
+def _dimension_declarations(check: DeclarationCheck) -> Dimension:
+    findings = [
+        Finding(
+            dimension="declarations",
+            severity="warning",
+            message=f"missing declaration: {name.replace('_', ' ')}",
+            remedy=_DECLARATION_REMEDIES[name],
+        )
+        for name in check.missing
+    ]
+    findings.extend(
+        Finding(
+            dimension="declarations",
+            severity="info",
+            message=f"recommended declaration absent: {name.replace('_', ' ')}",
+            remedy=_DECLARATION_REMEDIES[name],
+        )
+        for name in check.recommended_missing
+    )
+    required = len(check.required)
+    score = (required - len(check.missing)) / required if required else 1.0
+    return Dimension(
+        name="declarations",
+        score=_clamp(score),
+        weight=DEFAULT_WEIGHTS["declarations"],
+        measurements=check.to_dict(),
+        findings=tuple(findings),
+    )
+
+
+def _dimension_references(audit: ReferenceAudit | None) -> Dimension:
+    if audit is None or not audit.entries:
+        return Dimension(
+            name="references",
+            score=0.5,
+            weight=DEFAULT_WEIGHTS["references"],
+            measurements={"entries": 0},
+            findings=(
+                Finding(
+                    dimension="references",
+                    severity="info",
+                    message="no parsed bibliography; reference recency and type not measured",
+                    remedy="pass bibliography_path so references can be audited",
+                ),
+            ),
+        )
+    policy = audit.policy
+    findings: list[Finding] = []
+    for key, doi, nature in audit.retracted:
+        severity = "critical" if "retract" in nature.lower() else "warning"
+        findings.append(
+            Finding(
+                dimension="references",
+                severity=severity,
+                message=f"cited work {key} ({doi}) is flagged: {nature}",
+                remedy=(
+                    "remove or replace the citation, or cite it explicitly as "
+                    "retracted with the retraction notice"
+                ),
+            )
+        )
+    if audit.with_year and audit.recent_share < policy.min_recent_share:
+        findings.append(
+            Finding(
+                dimension="references",
+                severity="warning",
+                message=(
+                    f"{audit.recent_share:.0%} of references are from the last "
+                    f"{policy.recent_years} years (target {policy.min_recent_share:.0%})"
+                ),
+                remedy="support the state of the art with recent primary literature",
+            )
+        )
+    if audit.primary_share < policy.min_primary_share:
+        findings.append(
+            Finding(
+                dimension="references",
+                severity="warning",
+                message=(
+                    f"{audit.primary_share:.0%} of references are journal or conference "
+                    f"papers (target {policy.min_primary_share:.0%})"
+                ),
+                remedy="prefer primary peer-reviewed sources over books, web pages and preprints",
+            )
+        )
+    missing_year = audit.entries - audit.with_year
+    if missing_year:
+        findings.append(
+            Finding(
+                dimension="references",
+                severity="info",
+                message=f"{missing_year} reference(s) have no year",
+                remedy="complete the year field so recency can be audited",
+            )
+        )
+    recent_part = (
+        min(1.0, audit.recent_share / policy.min_recent_share)
+        if policy.min_recent_share
+        else 1.0
+    )
+    primary_part = (
+        min(1.0, audit.primary_share / policy.min_primary_share)
+        if policy.min_primary_share
+        else 1.0
+    )
+    score = 0.5 * recent_part + 0.5 * primary_part
+    retracted = sum(1 for _, _, nature in audit.retracted if "retract" in nature.lower())
+    if retracted:
+        score *= 0.5
+    return Dimension(
+        name="references",
+        score=_clamp(score),
+        weight=DEFAULT_WEIGHTS["references"],
+        measurements=audit.to_dict(),
         findings=tuple(findings),
     )
 
@@ -869,7 +1200,7 @@ def _dimension_formulaic_prose(text: str) -> Dimension:
     )
 
 
-def _dimension_tables_figures(text: str) -> Dimension:
+def _dimension_tables_figures(text: str, *, asset_root: str | None = None) -> Dimension:
     findings: list[Finding] = []
     tables = len(_TABLE_RE.findall(text))
     figures = len(_FIGURE_RE.findall(text))
@@ -906,14 +1237,17 @@ def _dimension_tables_figures(text: str) -> Dimension:
     missing = 0
     for path in graphics:
         candidates = (path, path + ".pdf", path + ".png", path + ".jpg")
-        if not any(_exists(candidate) for candidate in candidates):
+        if not any(_exists(candidate, asset_root) for candidate in candidates):
             missing += 1
     if missing:
         findings.append(
             Finding(
                 dimension="tables_figures",
                 severity="warning",
-                message=f"{missing} referenced graphic(s) not found relative to the working directory",
+                message=(
+                    f"{missing} referenced graphic(s) not found relative to "
+                    + ("the manuscript folder" if asset_root else "the working directory")
+                ),
                 remedy="confirm figure files ship with the submission",
             )
         )
@@ -939,11 +1273,16 @@ def _dimension_tables_figures(text: str) -> Dimension:
     )
 
 
-def _exists(path: str) -> bool:
+def _exists(path: str, asset_root: str | None = None) -> bool:
+    """Whether a graphic exists, resolved like LaTeX: relative to the manuscript."""
+
     from pathlib import Path
 
     try:
-        return Path(path).exists()
+        candidate = Path(path)
+        if asset_root and not candidate.is_absolute():
+            candidate = Path(asset_root) / candidate
+        return candidate.exists()
     except (OSError, ValueError):
         return False
 
@@ -1077,12 +1416,26 @@ def score_manuscript(
     bibliography_entries: Sequence[str] = (),
     bibliography_text: str | None = None,
     depth_target: int = 500,
-    min_anchored: float = 0.6,
+    min_anchored: float = DEFAULT_MIN_ANCHORED,
     allow_em_dash: bool = False,
     weights: Mapping[str, float] | None = None,
     corpus_size: int | None = None,
+    paper_type: str | None = "auto",
+    prisma_flow: FlowCheck | None = None,
+    declarations: DeclarationCheck | None = None,
+    reference_audit: ReferenceAudit | None = None,
+    locator_checks: Mapping[str, str] | None = None,
+    asset_root: str | None = None,
 ) -> QualityReport:
-    """Score a manuscript across twelve deterministic dimensions.
+    """Score a manuscript across fourteen deterministic dimensions.
+
+    ``paper_type`` selects the reporting standard: ``review`` (PRISMA 2020 /
+    PRISMA-S signals and flow arithmetic) or ``empirical`` (design, data,
+    analysis, statistics); ``auto`` decides from the corpus and the text.
+    ``declarations``, ``reference_audit``, ``prisma_flow`` and
+    ``locator_checks`` come from :mod:`paperassist.reporting_checks`; when a
+    caller omits them, declarations are detected from the text and the other
+    checks are reported as not measured.
 
     ``corpus_size`` is how many studies the manuscript had to synthesise. A
     binding supplies it when one exists; a caller holding extraction records
@@ -1118,6 +1471,20 @@ def score_manuscript(
         corpus_size = len(binding.records) if binding else 0
     if corpus_size < 0:
         raise QualityError("corpus_size must not be negative")
+    try:
+        resolved_type = resolve_paper_type(paper_type, text, study_count=corpus_size)
+    except ValueError as exc:
+        raise QualityError(str(exc)) from exc
+    if declarations is None:
+        from .reporting_checks import check_declarations
+
+        declarations = check_declarations(text, paper_type=resolved_type)
+    if reference_audit is None and bibliography_text:
+        from .corpus_binder import parse_bib_entries
+        from .reporting_checks import audit_references, cited_keys
+
+        cited = cited_keys(text)
+        reference_audit = audit_references(parse_bib_entries(bibliography_text), cited_keys=cited)
 
     dimensions = (
         _dimension_structure(text, depth_target=depth_target),
@@ -1126,12 +1493,16 @@ def score_manuscript(
             text, depth_target=depth_target, corpus_size=corpus_size
         ),
         _dimension_citations(ledger, binding, reference_keys=reference_keys),
-        _dimension_provenance(ledger, min_anchored=min_anchored),
+        _dimension_provenance(
+            ledger, min_anchored=min_anchored, locator_checks=locator_checks
+        ),
         _dimension_evidence(ledger, binding),
-        _dimension_method(text),
+        _dimension_method(text, paper_type=resolved_type, flow=prisma_flow),
         _dimension_limitations(text),
+        _dimension_declarations(declarations),
+        _dimension_references(reference_audit),
         _dimension_prose_style(text, allow_em_dash=allow_em_dash),
-        _dimension_tables_figures(text),
+        _dimension_tables_figures(text, asset_root=asset_root),
         _dimension_readability(text),
         _dimension_formulaic_prose(text),
     )
@@ -1149,6 +1520,7 @@ def score_manuscript(
 
     report = QualityReport(
         dimensions=dimensions,
+        paper_type=resolved_type,
         score=score,
         grade=grade,
         recommendation=recommendation,
@@ -1160,6 +1532,7 @@ def score_manuscript(
     ).hexdigest()
     return QualityReport(
         dimensions=report.dimensions,
+        paper_type=report.paper_type,
         score=report.score,
         grade=report.grade,
         recommendation=report.recommendation,
@@ -1174,7 +1547,8 @@ def format_quality_report(report: QualityReport) -> str:
         "## Manuscript quality report",
         "",
         f"**Score:** {report.score:.3f}  |  **Grade:** {report.grade}  |  "
-        f"**Recommendation:** {report.recommendation}",
+        f"**Recommendation:** {report.recommendation}  |  "
+        f"**Paper type:** {report.paper_type}",
         "",
         "| Dimension | Score | Weight |",
         "|---|---|---|",

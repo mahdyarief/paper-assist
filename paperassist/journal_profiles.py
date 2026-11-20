@@ -29,6 +29,10 @@ class JournalProfile:
     aliases: tuple[str, ...] = ()
     match_tokens: tuple[str, ...] = ()
     match_classes: tuple[str, ...] = ()
+    # Declarations the quality rubric requires for this venue. Empty means the
+    # generic default (competing interests, funding, data availability, AI use).
+    # Always confirm against the specific journal's guide for authors.
+    required_declarations: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -144,6 +148,7 @@ PROFILES: tuple[JournalProfile, ...] = (
             "Select the exact target journal on Elsevier's guide for authors; "
             "elsarticle provides the base class, not every journal's front-matter rules.",
         ),
+        required_declarations=("competing_interests", "funding", "data_availability", "ai_use"),
         sources=(
             "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions",
             "CTAN: https://ctan.org/pkg/elsarticle",
@@ -203,6 +208,7 @@ PROFILES: tuple[JournalProfile, ...] = (
             "Springer Nature provides journal-specific submission guidelines; use "
             "the template and instructions for the exact target journal.",
         ),
+        required_declarations=("competing_interests", "funding", "author_contributions", "data_availability", "ai_use"),
         sources=(
             "https://www.springernature.com/gp/authors/campaigns/latex-author-support",
             "CTAN: https://ctan.org/pkg/sn-jnl",

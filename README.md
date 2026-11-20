@@ -215,8 +215,20 @@ Perilaku mode tesis:
   style bibliografi, dan flag front matter) yang **bisa di-override** lewat
   `thesis_profile`, mis. `{"documentclass":"book","language":"english"}`.
 
-Mode paper tetap default (`document_kind: "paper"`), sehingga alur lama tidak
-berubah.
+## Mode paper
+
+Mode paper adalah default (`document_kind: "paper"`). Pembagian kepemilikan:
+
+| Bagian | Pemilik | Catatan |
+|---|---|---|
+| Introduction, Related Work, Background, Method | harness | task `section-*` |
+| Experimental Setup, Results | **penulis** | ditulis di dalam blok terproteksi; gate menolak hasil baru di luarnya |
+| Discussion, Limitations, Conclusion | harness | boleh menyebut ulang angka **hanya** bila angka itu ada di blok terproteksi, atau merujuk tabel/gambar di sana dengan `ef` |
+| Declarations (competing interests, funding, data availability, CRediT, penggunaan AI) | **penulis** | blok terproteksi kedua di skeleton, berisi templat dalam komentar |
+
+Gate impor menolak sisa gaya asisten ("As an AI language model…", "Berikut
+adalah revisi…"). Pengungkapan penggunaan AI tetap wajib (ICMJE, COPE), tetapi
+itu pernyataan penulis di blok Declarations, bukan kalimat di dalam argumen.
 
 ## Research OS pipeline
 
@@ -230,8 +242,8 @@ deterministic checks yang dapat diulang. Model ini berdiri di atas empat pilar:
 | Pilar | Landasan | Implementasi di PaperAssist |
 |---|---|---|
 | **Evidence-first / PRISMA-like traceability** | PRISMA 2020, Kitchenham: identification → screening → eligibility → included; setiap angka dan klaim harus dapat ditelusuri ke sumber | `corpus_bind` mengikat record ekstraksi ↔ PDF lokal ↔ entri BibTeX; PRISMA flow dan extraction records diterima sebagai `records_paths` |
-| **Provenance & claim ledger** | Setiap sitasi membutuhkan *locator* (halaman/baris + kutipan opsional); klaim dibedakan dari narasi | `% @locator{key: page=..., quote="..."}`, status `anchored / grounded / attributed / derived / unsupported`, kanal `evidence` vs `narrative` |
-| **Rubrik kualitas transparan** | Review rubric SINTA/Scopus: struktur, metode, sintesis, batasan, gaya, keterbacaan | `score_manuscript` dengan 12 dimensi berbobot; grade A–E (A ≥ 0.85) dan rekomendasi accept/minor/major/reject |
+| **Provenance & claim ledger** | Setiap sitasi membutuhkan *locator* (halaman/baris + kutipan opsional); klaim dibedakan dari narasi | `% @locator{key: page=..., quote="..."}`, status `grounded / attributed / derived / unsupported / narrative` (grounded + attributed + derived = *anchored*); kutipan locator diverifikasi terhadap full text yang terikat, kanal `evidence` vs `narrative` |
+| **Rubrik kualitas transparan** | Alasan penolakan reviewer yang berulang, plus standar pelaporan: PRISMA 2020 / PRISMA-S untuk review, pelaporan statistik untuk studi empiris, deklarasi ICMJE/COPE/penerbit, dan kualitas referensi (rubrik heuristik buatan sendiri, bukan instrumen resmi SINTA/Scopus) | `score_manuscript` dengan 14 dimensi berbobot dan `paper_type` (`review` / `empirical` / `auto`); grade A ≥ 0.85 *accept*, B ≥ 0.72 *minor*, C ≥ 0.58 *major*, D dan E *reject* |
 | **Human-in-the-loop (HITL)** | AI bukan pembuat data/fakta; peneliti memutuskan, verifikasi tidak bisa dilewatkan | `provider_calls: 0`, import gate, protected experiment blocks, `improvement_verify` membandingkan before/after dan menolak revisi yang menurunkan grounding |
 
 Dengan kata lain: **PaperAssist tidak mengarang isi, tetapi menolak isi yang tidak
@@ -255,7 +267,7 @@ flowchart TD
         X["expand_includes + _resolve_source<br/>baca teks & validasi path"]
         B["corpus_bind<br/>DOI/title/record-id → PDF + BibTeX"]
         C["build_ledger<br/>pisah evidence ↔ narrative + status klaim"]
-        Q["score_manuscript<br/>12 dimensi → grade + findings"]
+        Q["score_manuscript<br/>14 dimensi → grade + findings"]
         P["revision_plan<br/>urutan perbaikan"]
         V["audit_source_coverage<br/>heading + angka: covered/partial/missing"]
         H["AI harness boleh menulis ulang<br/>hanya narrative.jsonl"]
@@ -264,7 +276,7 @@ flowchart TD
     subgraph OUT["Artefak .paperassist/research-os/&lt;run_id&gt;/"]
         A1["corpus-binding.json/.md<br/>corpus-bibliography.bib<br/>study-catalogue.tex"]
         A2["claim-ledger.json/.md<br/>narrative.jsonl + evidence.jsonl"]
-        A3["quality-report.json/.md<br/>revision-plan.json"]
+        A3["quality-report.json/.md<br/>revision-plan.json<br/>reporting-checks.json"]
         A4["source-coverage.json/.md<br/>source_gaps di revision-plan"]
         A5["index.md<br/>ringkasan + contract + source gaps"]
     end
@@ -318,6 +330,16 @@ menghilangkan RQ, angka hasil, atau keterbatasan tanpa catatan.
   }
 }
 ```
+
+Parameter opsional untuk standar pelaporan:
+
+| Parameter | Fungsi |
+|---|---|
+| `paper_type` | `auto` (default), `review`, atau `empirical`. Menentukan sinyal metode: PRISMA/PRISMA-S untuk review; desain, data, analisis, dan statistik untuk empiris |
+| `records_paths` | Dokumen count PRISMA (mis. `prisma_flow.json` dengan `records_identified`, `duplicates_removed`, `records_screened`, `records_excluded`, `reports_sought`, `reports_not_retrieved`, `reports_assessed`, `reports_excluded`, `studies_included`, serta rincian opsional `identified_by_database` / `exclusion_reasons`). Aritmetikanya dicek per tahap |
+| `journal_profile` / `required_declarations` | Deklarasi wajib dari profil jurnal (mis. `intl-elsevier-elsarticle`) atau daftar eksplisit: `competing_interests`, `funding`, `data_availability`, `ai_use`, `author_contributions`, `code_availability`, `ethics` |
+| `reference_policy` | `{recent_years, min_recent_share, min_primary_share, reference_year}`; default 10 tahun, 60%, 60% (bersifat anjuran, sesuaikan dengan jurnal) |
+| `retraction_db_path` | CSV ekspor Retraction Watch (`OriginalPaperDOI`, `RetractionNature`) di workspace; DOI di `.bib` dicocokkan secara offline |
 
 Return value memuat `status`, `executor: "ai-harness"`, `provider_calls: 0`,
 `schema: "paperassist.research-os/v1"`, `output_dir`, dan ringkasan

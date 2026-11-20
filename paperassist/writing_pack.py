@@ -80,8 +80,13 @@ DEFAULT_SECTIONS = (
     "Method",
     "Experimental Setup",
     "Results",
+    "Discussion",
+    "Limitations",
     "Conclusion",
 )
+# Experimental Setup and Results are author-owned: they live inside the
+# protected experiment block, and the import gate rejects new results outside
+# it. Paper packs therefore skip them by default; the Discussion restates them.
 EXPERIMENTAL_SECTIONS = frozenset({"Experimental Setup", "Results"})
 REFINE_SECTIONS = (
     "Abstract",
@@ -143,13 +148,26 @@ One continuous paragraph, no line breaks inside the abstract.
   and building on the Background concepts.
 """,
     "Experimental Setup": """
+- Author-owned: written inside the protected experiment block, not by the harness.
 - How the claims are tested: dataset, metrics, hyperparameters, implementation.
 - Do not invent hardware details.
 """,
     "Results": """
+- Author-owned: written inside the protected experiment block, not by the harness.
 - Only results that were actually run and saved in notes/logs; never invent.
 - Compare against baselines with statistics and confidence intervals.
-- Include ablation studies, limitations, and all relevant figures.
+""",
+    "Discussion": """
+- Interpret the results in the protected experiment block: what they mean for
+  the research question and how they compare with the cited prior work.
+- Restate a number only if it appears verbatim in the protected block; otherwise
+  refer to its tables and figures with \\ref. New numbers are rejected.
+- Separate what the results show from what they suggest.
+""",
+    "Limitations": """
+- Threats to internal, external and construct validity of this specific study.
+- What the data, sample, metrics or setting cannot support; no generic caveats.
+- How future work could remove each limitation.
 """,
     "Conclusion": """
 - Brief recap of the entire paper.
@@ -210,14 +228,21 @@ REFINEMENT_INSTRUCTIONS = (
     "attention to fixing any errors such as:\n" + ERROR_LIST
 )
 
-# These rules are also enforced mechanically by WritingEngine._validate_candidate.
+# WritingEngine._validate_candidate enforces these mechanically: complete
+# document, byte-identical protected blocks, results outside the protected block
+# only when it backs them, allowed citation keys, no unsafe TeX or includes, no
+# secrets, and no chat-assistant residue. "Nothing invented" beyond that is a
+# review rule the Research OS audit checks afterwards.
 ACCEPTANCE_RULES: tuple[str, ...] = (
     "The returned document is one complete LaTeX document.",
-    "Every PAPERASSIST protected experiment block is preserved byte-for-byte.",
-    "No experiment, metric, hardware detail, or comparison is invented.",
+    "Every PAPERASSIST protected block (experiment and declarations) is preserved byte-for-byte.",
+    "No experiment, metric, hardware detail, or comparison is invented; a number "
+    "outside the protected block must already appear inside it.",
     "Only citation keys present in the allowed list are used.",
     "No shell commands, file includes, or new bibliography entries are added.",
-    "No secret-like content, AI disclosure text, or writing-process narration.",
+    "No secret-like content, chat-assistant residue, or writing-process narration "
+    "in the prose; AI-use, funding, competing-interest, data-availability and "
+    "contribution statements belong to the author-owned Declarations block.",
 )
 
 @dataclass(frozen=True)
@@ -835,7 +860,11 @@ def build_tasks(
         sections = list(DEFAULT_SECTIONS)
     skip_experimental = _as_bool(
         payload.get("skip_experimental_sections"),
-        default=bool(payload.get("protected_only")) or _has_experimental_skip(payload),
+        # The paper skeleton always carries a protected experiment block, so the
+        # empirical sections are the authors' and writing them would be refused.
+        default=document_kind != "thesis"
+        or bool(payload.get("protected_only"))
+        or _has_experimental_skip(payload),
     )
     if skip_experimental:
         sections = [
@@ -932,6 +961,31 @@ def _has_experimental_skip(payload: Mapping[str, Any]) -> bool:
     return bool(payload.get("protected_blocks"))
 
 
+def _declarations_block() -> str:
+    from .protected_blocks import PROTECTED_END, PROTECTED_START
+
+    # Author-owned and protected: the harness can neither write nor alter these
+    # statements. They stay commented until the authors fill them in, so the
+    # quality audit reports them missing rather than accepting a template.
+    return (
+        f"{PROTECTED_START}\n"
+        "% Declarations: author-owned, filled in by the authors before submission.\n"
+        "% Uncomment and complete what the target journal requires.\n"
+        "% \\section*{Declarations}\n"
+        "% \\paragraph{Competing interests} The authors declare ...\n"
+        "% \\paragraph{Funding} This work was supported by ... (grant ...).\n"
+        "% \\paragraph{Data availability} The data are available at ...\n"
+        "% \\paragraph{Author contributions (CRediT)} A: Conceptualization, ...\n"
+        "% \\paragraph{Use of generative AI} During the preparation of this work the\n"
+        "%   authors used [tool] for [purpose]. The authors reviewed and edited the\n"
+        "%   content and take full responsibility for it.\n"
+        f"{PROTECTED_END}\n"
+    )
+
+
+_DECLARATIONS_BLOCK = _declarations_block()
+
+
 def _skeleton(title: str, protected_body: str = "") -> str:
     safe_title = str(title or "").strip() or "Untitled Research Manuscript"
     from .protected_blocks import PROTECTED_END, PROTECTED_START
@@ -962,9 +1016,14 @@ def _skeleton(title: str, protected_body: str = "") -> str:
         "\\section{Method}\n"
         "% TODO(agent): section-method\n"
         + protected
-        + "\\section{Conclusion}\n"
+        + "\\section{Discussion}\n"
+        "% TODO(agent): section-discussion\n"
+        "\\section{Limitations}\n"
+        "% TODO(agent): section-limitations\n"
+        "\\section{Conclusion}\n"
         "% TODO(agent): section-conclusion\n"
-        "\\bibliographystyle{plain}\n"
+        + _DECLARATIONS_BLOCK
+        + "\\bibliographystyle{plain}\n"
         "\\bibliography{references}\n"
         "\\end{document}\n"
     )

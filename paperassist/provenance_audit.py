@@ -35,7 +35,10 @@ _FIELD_RE = re.compile(r"(?P<name>[A-Za-z_]+)\s*=\s*(?P<value>\"[^\"]*\"|'[^']*'
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
-DEFAULT_MIN_GROUNDING_RATIO = 0.5
+# One floor for every grounding measure: the quality rubric's anchored-evidence
+# ratio and the writing gate's quote-grounded ratio use the same default.
+DEFAULT_MIN_ANCHORED = 0.6
+DEFAULT_MIN_GROUNDING_RATIO = DEFAULT_MIN_ANCHORED
 
 
 class ProvenanceAuditError(RuntimeError):
@@ -340,6 +343,7 @@ def report_sha256(report: ProvenanceReport) -> str:
 
 
 __all__ = [
+    "DEFAULT_MIN_ANCHORED",
     "DEFAULT_MIN_GROUNDING_RATIO",
     "CitationContext",
     "Locator",

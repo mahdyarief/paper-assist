@@ -99,6 +99,11 @@ _RESEARCH_KEYS = frozenset(
         "run_id",
         "source_path",
         "research_source",
+        "paper_type",
+        "required_declarations",
+        "journal_profile",
+        "reference_policy",
+        "retraction_db_path",
     }
 )
 
@@ -185,15 +190,18 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                 description=(
                     "Score a manuscript across structure, abstract, depth, citations, "
                     "provenance, evidence, method rigour, limitations, prose style, "
-                    "figures, readability and (advisory) formulaic prose; returns a "
-                    "grade and blocking findings."
+                    "declarations, references, figures, readability and (advisory) "
+                    "formulaic prose; paper_type selects review (PRISMA) or empirical "
+                    "reporting signals. Returns a grade and blocking findings."
                 ),
             ),
             ToolSpec(
                 name="research_os",
                 description=(
                     "Run the full pipeline (bind, audit, score, separate, plan) and "
-                    "write narrative.jsonl and evidence.jsonl as distinct artifacts."
+                    "write narrative.jsonl and evidence.jsonl as distinct artifacts; "
+                    "also checks PRISMA flow arithmetic, declarations, references "
+                    "(recency, primary share, retractions) and locator quotes."
                 ),
                 payload_keys=tuple(sorted(_RESEARCH_KEYS)),
             ),
@@ -377,7 +385,12 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
         min_anchored: float = 0.6,
         allow_em_dash: bool = False,
         bibliography_path: str | None = None,
+        paper_type: str = "auto",
+        required_declarations: list[str] | None = None,
+        reference_policy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        from paperassist.reporting_checks import ReferencePolicy, check_declarations
+
         root = _workspace(workspace)
         text = read_workspace_text(root, target_path, what="manuscript")
         entries: list[str] = []
@@ -387,6 +400,21 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             from paperassist.corpus_binder import parse_bib_entries
 
             entries = [entry.key for entry in parse_bib_entries(bib_text)]
+        from paperassist.corpus_binder import parse_bib_entries as _parse
+        from paperassist.reporting_checks import (
+            audit_references,
+            cited_keys,
+            resolve_paper_type,
+        )
+
+        resolved = resolve_paper_type(paper_type, text)
+        reference_audit = None
+        if bib_text:
+            reference_audit = audit_references(
+                _parse(bib_text),
+                cited_keys=cited_keys(text),
+                policy=ReferencePolicy.from_payload(reference_policy),
+            )
         report = score_manuscript(
             text,
             bibliography_entries=entries,
@@ -394,6 +422,12 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             depth_target=depth_target,
             min_anchored=min_anchored,
             allow_em_dash=allow_em_dash,
+            paper_type=resolved,
+            declarations=check_declarations(
+                text, required=required_declarations, paper_type=resolved
+            ),
+            reference_audit=reference_audit,
+            asset_root=str((root / target_path).parent),
         )
         return {
             "status": "ok",

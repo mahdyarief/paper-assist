@@ -240,7 +240,7 @@ def status_by_sentence(ledger):
 def test_aggregate_counts_are_derived_from_records():
     # The row count is the corpus size, 3, and the only counted nouns the
     # records actually name are the fields "class" and "total".
-    text = r"""egin{document}
+    text = r"""\begin{document}
 \section{Results}
 Only 3 rows were extracted.
 \end{document}
@@ -261,7 +261,7 @@ def test_proportion_requires_derived_proportion_not_a_count():
 
 
 def test_count_document_contributes_counts_and_proportions():
-    text = r"""egin{document}
+    text = r"""\begin{document}
 \section{Results}
 We identified 265 records and included 40,8\% of them.
 \end{document}
