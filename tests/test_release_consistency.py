@@ -64,7 +64,7 @@ def test_sources_contain_no_control_characters():
     # can land as a literal backspace (0x08); the pattern then silently never
     # matches. This happened twice (claim_ledger "persen", ledger fixtures).
     offenders = []
-    for path in [*ROOT.glob("paperassist/*.py"), *ROOT.glob("mcp_servers/**/*.py"),
+    for path in [*ROOT.glob("paperassist/**/*.py"), *ROOT.glob("mcp_servers/**/*.py"),
                  *ROOT.glob("engine/*.py"), *ROOT.glob("tests/*.py")]:
         text = path.read_text(encoding="utf-8")
         if any(ord(char) < 32 and char not in "\n\r\t" for char in text):

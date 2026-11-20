@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Modularisation (no behaviour change)
+
+- `manuscript_quality.py` (1593 lines) split into the `paperassist.quality`
+  package: `_base` (types, section parsing), `structure`, `grounding`,
+  `method`, `compliance`, `style` and `scoring`. `manuscript_quality` stays as
+  the public import path.
+- `writing_pack.py` (1500 lines) split into `writing_content` (sections,
+  briefs, rules), `writing_skeletons` (LaTeX skeletons, protected blocks) and
+  `writing_tasks` (task assembly); `writing_pack` keeps pack building and
+  loading and re-exports the public names.
+
 ### Paper mode and Research OS reporting standards
 
 - `paper_type` (`auto` / `review` / `empirical`) for `research_os` and

@@ -1,0 +1,238 @@
+"""Combine the dimensions into a weighted score, grade and report."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
+
+from ..claim_ledger import ClaimLedger
+from ..corpus_binder import CorpusBinding
+from ..provenance_audit import DEFAULT_MIN_ANCHORED
+from ..reporting_checks import (
+    DeclarationCheck,
+    FlowCheck,
+    ReferenceAudit,
+    resolve_paper_type,
+)
+from ._base import (
+    _REFERENCE_ITEM_RE,
+    DEFAULT_WEIGHTS,
+    QualityError,
+    QualityReport,
+    _grade,
+)
+from .compliance import (
+    _dimension_declarations,
+    _dimension_references,
+)
+from .grounding import (
+    _dimension_citations,
+    _dimension_evidence,
+    _dimension_provenance,
+)
+from .method import (
+    _dimension_limitations,
+    _dimension_method,
+)
+from .structure import (
+    _dimension_abstract,
+    _dimension_depth,
+    _dimension_structure,
+)
+from .style import (
+    _dimension_formulaic_prose,
+    _dimension_prose_style,
+    _dimension_readability,
+    _dimension_tables_figures,
+)
+
+
+def _reference_keys(
+    text: str,
+    bibliography_entries: Sequence[str],
+    bibliography_text: str | None,
+) -> list[str]:
+    keys: list[str] = list(bibliography_entries)
+    if bibliography_text:
+        for match in _REFERENCE_ITEM_RE.finditer(bibliography_text):
+            key = match.group(1).strip()
+            if key and key not in keys:
+                keys.append(key)
+    if not keys:
+        for match in _REFERENCE_ITEM_RE.finditer(text):
+            key = match.group(1).strip()
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
+def score_manuscript(
+    text: str,
+    *,
+    ledger: ClaimLedger | None = None,
+    binding: CorpusBinding | None = None,
+    bibliography_entries: Sequence[str] = (),
+    bibliography_text: str | None = None,
+    depth_target: int = 500,
+    min_anchored: float = DEFAULT_MIN_ANCHORED,
+    allow_em_dash: bool = False,
+    weights: Mapping[str, float] | None = None,
+    corpus_size: int | None = None,
+    paper_type: str | None = "auto",
+    prisma_flow: FlowCheck | None = None,
+    declarations: DeclarationCheck | None = None,
+    reference_audit: ReferenceAudit | None = None,
+    locator_checks: Mapping[str, str] | None = None,
+    asset_root: str | None = None,
+) -> QualityReport:
+    """Score a manuscript across fourteen deterministic dimensions.
+
+    ``paper_type`` selects the reporting standard: ``review`` (PRISMA 2020 /
+    PRISMA-S signals and flow arithmetic) or ``empirical`` (design, data,
+    analysis, statistics); ``auto`` decides from the corpus and the text.
+    ``declarations``, ``reference_audit``, ``prisma_flow`` and
+    ``locator_checks`` come from :mod:`paperassist.reporting_checks`; when a
+    caller omits them, declarations are detected from the text and the other
+    checks are reported as not measured.
+
+    ``corpus_size`` is how many studies the manuscript had to synthesise. A
+    binding supplies it when one exists; a caller holding extraction records
+    without bound full texts passes it directly, because a review's reporting
+    floor follows the corpus it claims, not the files it happens to have.
+    """
+
+    if not isinstance(text, str) or not text.strip():
+        raise QualityError("manuscript text is empty")
+    if depth_target <= 0:
+        raise QualityError("depth_target must be positive")
+    if not 0 < min_anchored <= 1:
+        raise QualityError("min_anchored must be in (0, 1]")
+
+    active_weights = dict(DEFAULT_WEIGHTS)
+    if weights:
+        unknown = set(weights) - set(DEFAULT_WEIGHTS)
+        if unknown:
+            raise QualityError(f"unknown quality dimensions: {sorted(unknown)}")
+        active_weights.update({key: float(value) for key, value in weights.items()})
+    total_weight = sum(active_weights.values())
+    if total_weight <= 0:
+        raise QualityError("weights must sum to a positive value")
+
+    reference_keys = _reference_keys(text, bibliography_entries, bibliography_text)
+
+    if ledger is None:
+        from ..claim_ledger import build_ledger
+
+        ledger = build_ledger(text)
+
+    if corpus_size is None:
+        corpus_size = len(binding.records) if binding else 0
+    if corpus_size < 0:
+        raise QualityError("corpus_size must not be negative")
+    try:
+        resolved_type = resolve_paper_type(paper_type, text, study_count=corpus_size)
+    except ValueError as exc:
+        raise QualityError(str(exc)) from exc
+    if declarations is None:
+        from ..reporting_checks import check_declarations
+
+        declarations = check_declarations(text, paper_type=resolved_type)
+    if reference_audit is None and bibliography_text:
+        from ..corpus_binder import parse_bib_entries
+        from ..reporting_checks import audit_references, cited_keys
+
+        cited = cited_keys(text)
+        reference_audit = audit_references(parse_bib_entries(bibliography_text), cited_keys=cited)
+
+    dimensions = (
+        _dimension_structure(text, depth_target=depth_target),
+        _dimension_abstract(text),
+        _dimension_depth(
+            text, depth_target=depth_target, corpus_size=corpus_size
+        ),
+        _dimension_citations(ledger, binding, reference_keys=reference_keys),
+        _dimension_provenance(
+            ledger, min_anchored=min_anchored, locator_checks=locator_checks
+        ),
+        _dimension_evidence(ledger, binding),
+        _dimension_method(text, paper_type=resolved_type, flow=prisma_flow),
+        _dimension_limitations(text),
+        _dimension_declarations(declarations),
+        _dimension_references(reference_audit),
+        _dimension_prose_style(text, allow_em_dash=allow_em_dash),
+        _dimension_tables_figures(text, asset_root=asset_root),
+        _dimension_readability(text),
+        _dimension_formulaic_prose(text),
+    )
+
+    weighted = sum(
+        dimension.score * active_weights[dimension.name] for dimension in dimensions
+    )
+    score = weighted / total_weight
+    grade, recommendation = _grade(score)
+    worst = tuple(
+        dimension.name
+        for dimension in sorted(dimensions, key=lambda d: d.score)[:3]
+        if dimension.score < 0.7
+    )
+
+    report = QualityReport(
+        dimensions=dimensions,
+        paper_type=resolved_type,
+        score=score,
+        grade=grade,
+        recommendation=recommendation,
+        worst_dimensions=worst,
+        source_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    )
+    digest = hashlib.sha256(
+        json.dumps(report.to_dict(), ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return QualityReport(
+        dimensions=report.dimensions,
+        paper_type=report.paper_type,
+        score=report.score,
+        grade=report.grade,
+        recommendation=report.recommendation,
+        worst_dimensions=report.worst_dimensions,
+        digest=digest,
+        source_sha256=report.source_sha256,
+    )
+
+
+def format_quality_report(report: QualityReport) -> str:
+    lines = [
+        "## Manuscript quality report",
+        "",
+        f"**Score:** {report.score:.3f}  |  **Grade:** {report.grade}  |  "
+        f"**Recommendation:** {report.recommendation}  |  "
+        f"**Paper type:** {report.paper_type}",
+        "",
+        "| Dimension | Score | Weight |",
+        "|---|---|---|",
+    ]
+    for dimension in sorted(report.dimensions, key=lambda d: d.score):
+        lines.append(
+            f"| {dimension.name} | {dimension.score:.2f} | {dimension.weight:.2f} |"
+        )
+    critical = report.findings(min_severity="critical")
+    warnings = report.findings(min_severity="warning")
+    if critical:
+        lines += ["", "### Blocking findings", ""]
+        for finding in critical:
+            location = f" (line {finding.line})" if finding.line else ""
+            lines.append(
+                f"- [{finding.dimension}] {finding.message}{location} — {finding.remedy}"
+            )
+    remaining = [finding for finding in warnings if finding not in critical]
+    if remaining:
+        lines += ["", "### Warnings", ""]
+        for finding in remaining[:15]:
+            lines.append(
+                f"- [{finding.dimension}] {finding.message} — {finding.remedy}"
+            )
+        if len(remaining) > 15:
+            lines.append(f"- and {len(remaining) - 15} more")
+    lines.append("")
+    return "\n".join(lines)
