@@ -70,6 +70,7 @@ from .reporting_checks import (
     cited_keys,
     load_retraction_dois,
     resolve_paper_type,
+    resolve_research_design,
     verify_locator_quotes,
 )
 from .source_coverage import SourceCoverage, audit_source_coverage, format_source_coverage
@@ -348,8 +349,16 @@ def _reporting_checks(
         paper_type = resolve_paper_type(
             payload.get("paper_type"), manuscript, study_count=study_count
         )
+        design = resolve_research_design(
+            payload.get("research_design"),
+            manuscript,
+            study_count=study_count,
+            paper_type=payload.get("paper_type"),
+        )
     except ValueError as exc:
         raise ResearchOSError(str(exc)) from exc
+    if payload.get("research_design") not in (None, "", "auto"):
+        paper_type = design.family
 
     flow = check_prisma_flow([record for record in records if record.get("_counts")])
 
@@ -399,7 +408,8 @@ def _reporting_checks(
 
     return {
         "paper_type": paper_type,
-        "prisma_flow": flow if paper_type == "review" else None,
+        "research_design": design,
+        "prisma_flow": flow if design.flow == "prisma" else None,
         "declarations": declarations,
         "reference_audit": reference_audit,
         "locator_checks": locator_checks,
@@ -485,6 +495,7 @@ def run_research_os(
             allow_em_dash=bool(payload.get("allow_em_dash", False)),
             corpus_size=study_count,
             paper_type=checks["paper_type"],
+            research_design=checks["research_design"].key,
             prisma_flow=checks["prisma_flow"],
             declarations=checks["declarations"],
             reference_audit=checks["reference_audit"],
@@ -564,6 +575,7 @@ def run_research_os(
         _json(
             {
                 "paper_type": checks["paper_type"],
+                "research_design": checks["research_design"].to_dict(),
                 "prisma_flow": checks["prisma_flow"].to_dict()
                 if checks["prisma_flow"]
                 else None,

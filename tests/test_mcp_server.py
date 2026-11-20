@@ -157,7 +157,7 @@ def test_stdio_protocol_round_trip(tmp_path):
     by_id = {response.get("id"): response for response in responses}
     assert by_id[1]["result"]["serverInfo"]["version"] == "4.0.1"
     tools = by_id[2]["result"]["tools"]
-    assert len(tools) == 17
+    assert len(tools) == 18
     assert all(tool["inputSchema"]["properties"] for tool in tools)
     # Execution failure is a tool result the harness can read, not a protocol error.
     assert by_id[3]["result"]["isError"] is True

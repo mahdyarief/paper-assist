@@ -100,6 +100,7 @@ _RESEARCH_KEYS = frozenset(
         "source_path",
         "research_source",
         "paper_type",
+        "research_design",
         "required_declarations",
         "journal_profile",
         "reference_policy",
@@ -191,8 +192,10 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                     "Score a manuscript across structure, abstract, depth, citations, "
                     "provenance, evidence, method rigour, limitations, prose style, "
                     "declarations, references, figures, readability and (advisory) "
-                    "formulaic prose; paper_type selects review (PRISMA) or empirical "
-                    "reporting signals. Returns a grade and blocking findings."
+                    "formulaic prose; research_design (or paper_type) selects the "
+                    "reporting standard: PRISMA, CONSORT, STROBE, CROSS, SRQR/COREQ, "
+                    "TRIPOD+AI, REFORMS, DSRM, R&D, PTK and more. Returns a grade "
+                    "and blocking findings."
                 ),
             ),
             ToolSpec(
@@ -229,6 +232,17 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                     "skripsi/tesis baselines), or detect plausible profiles from "
                     "LaTeX source; returns margin/font/spacing/pagination rules "
                     "and a ready-to-use LaTeX preamble."
+                ),
+            ),
+            ToolSpec(
+                name="design_lookup",
+                description=(
+                    "List research designs (systematic/scoping review, meta-analysis, "
+                    "bibliometric, RCT, quasi-experiment, observational, survey, "
+                    "diagnostic, prediction model, ML experiment, qualitative, mixed "
+                    "methods, case study, design science, R&D, action research, PTK) "
+                    "with their reporting guideline and checked items; look one up by "
+                    "key or alias, or detect it from a manuscript."
                 ),
             ),
         ]
@@ -386,6 +400,7 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
         allow_em_dash: bool = False,
         bibliography_path: str | None = None,
         paper_type: str = "auto",
+        research_design: str = "auto",
         required_declarations: list[str] | None = None,
         reference_policy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -422,7 +437,8 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             depth_target=depth_target,
             min_anchored=min_anchored,
             allow_em_dash=allow_em_dash,
-            paper_type=resolved,
+            paper_type=paper_type,
+            research_design=research_design,
             declarations=check_declarations(
                 text, required=required_declarations, paper_type=resolved
             ),
@@ -549,6 +565,55 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             "provider_calls": 0,
             "result": result,
             "markdown": format_thesis_profile_report(result),
+        }
+
+    def design_lookup(
+        self,
+        query: str | None = None,
+        category: str | None = None,
+        manuscript_path: str | None = None,
+        workspace: str | None = None,
+    ) -> dict[str, Any]:
+        from paperassist.reporting_checks import resolve_paper_type
+        from paperassist.research_designs import (
+            DESIGNS,
+            design_catalogue,
+            design_hits,
+            design_method_brief,
+            detect_research_design,
+            get_design,
+        )
+
+        if manuscript_path:
+            if not workspace:
+                raise ValueError("workspace is required when manuscript_path is given")
+            text = read_workspace_text(_workspace(workspace), manuscript_path, what="manuscript")
+            family = resolve_paper_type("auto", text)
+            design = get_design(detect_research_design(text, family=family))
+            result: dict[str, Any] = {
+                "detected": design.to_dict(),
+                "family": family,
+                "candidates": design_hits(text),
+            }
+            designs = [design]
+        elif query:
+            design = get_design(query)
+            result = {"design": design.to_dict()}
+            designs = [design]
+        else:
+            items = design_catalogue()
+            if category:
+                items = [item for item in items if item["category"] == category.strip().lower()]
+            result = {"count": len(items), "designs": items}
+            designs = [DESIGNS[item["key"]] for item in items]
+        lines = ["## Research designs", ""]
+        for design in designs:
+            lines += [f"### {design.label} (`{design.key}`)", "", design_method_brief(design), ""]
+        return {
+            "status": "ok",
+            "provider_calls": 0,
+            "result": result,
+            "markdown": "\n".join(lines),
         }
 
     def read_resource(

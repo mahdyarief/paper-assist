@@ -179,6 +179,7 @@ class Dimension:
 class QualityReport:
     dimensions: tuple[Dimension, ...] = ()
     paper_type: str = "review"
+    research_design: str = ""
     score: float = 0.0
     grade: str = "E"
     recommendation: str = "reject"
@@ -215,6 +216,7 @@ class QualityReport:
             "digest": self.digest,
             "source_sha256": self.source_sha256,
             "paper_type": self.paper_type,
+            "research_design": self.research_design,
             "score": round(self.score, 4),
             "grade": self.grade,
             "recommendation": self.recommendation,

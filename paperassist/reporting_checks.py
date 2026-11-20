@@ -28,14 +28,18 @@ import re
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .research_designs import ResearchDesign
 
 PAPER_TYPES = ("empirical", "review")
 
 _REVIEW_RE = re.compile(
     r"systematic (?:literature )?review|scoping review|meta-analy|mapping study|"
     r"tinjauan (?:literatur(?:e)? )?sistematis|kajian (?:literatur )?sistematis|"
-    r"\bslr\b|\bprisma\b",
+    r"\bslr\b|\bprisma\b|bibliometri|scientometri|vosviewer|bibliometrix|"
+    r"narrative review|integrative review",
     re.IGNORECASE,
 )
 
@@ -63,14 +67,54 @@ def detect_paper_type(text: str, *, study_count: int = 0) -> str:
 
 
 def resolve_paper_type(value: str | None, text: str, *, study_count: int = 0) -> str:
+    """The design family, ``review`` or ``empirical``.
+
+    ``value`` may also name a specific research design (``rct``, ``ptk``,
+    ``scoping_review``...); its family is returned.
+    """
+
     choice = str(value or "auto").strip().lower()
     aliases = {"slr": "review", "systematic-review": "review", "experimental": "empirical"}
     choice = aliases.get(choice, choice)
     if choice == "auto":
         return detect_paper_type(text, study_count=study_count)
-    if choice not in PAPER_TYPES:
-        raise ValueError(f"paper_type must be auto, {', '.join(PAPER_TYPES)}")
-    return choice
+    if choice in PAPER_TYPES:
+        return choice
+    from .research_designs import get_design
+
+    try:
+        return get_design(choice).family
+    except ValueError:
+        raise ValueError(
+            f"paper_type must be auto, {', '.join(PAPER_TYPES)} or a research design key"
+        ) from None
+
+
+def resolve_research_design(
+    value: str | None,
+    text: str,
+    *,
+    study_count: int = 0,
+    paper_type: str | None = "auto",
+) -> ResearchDesign:
+    """The research design whose reporting standard applies.
+
+    An explicit ``value`` wins. Otherwise ``paper_type`` (which may itself be a
+    design key) fixes the family, and the most specific design of that family
+    the manuscript names is chosen; without one, the family's general design
+    (systematic review or general empirical study) applies.
+    """
+
+    from .research_designs import detect_research_design, get_design
+
+    choice = str(value or "auto").strip().lower()
+    if choice not in ("", "auto"):
+        return get_design(choice)
+    type_choice = str(paper_type or "auto").strip().lower()
+    if type_choice not in ("", "auto", *PAPER_TYPES, "slr", "systematic-review", "experimental"):
+        return get_design(type_choice)
+    family = resolve_paper_type(paper_type, text, study_count=study_count)
+    return get_design(detect_research_design(text, family=family))
 
 
 # --------------------------------------------------------------------------
@@ -603,6 +647,7 @@ __all__ = [
     "LOCATOR_NO_TEXT",
     "LOCATOR_VERIFIED",
     "PAPER_TYPES",
+    "resolve_research_design",
     "PRIMARY_ENTRY_TYPES",
     "RECOMMENDED_DECLARATIONS",
     "ReferenceAudit",

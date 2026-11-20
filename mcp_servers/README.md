@@ -10,7 +10,7 @@ This directory holds the MCP bridge the plugin exposes:
 - `paperassist/`: pack and Research OS tools (`harness_status`, `pack_scaffold`,
   `pack_plan`, `pack_task`, `pack_import`, `corpus_bind`, `claim_audit`,
   `quality_score`, `research_os`, `improvement_verify`, `journal_lookup`,
-  `thesis_lookup`)
+  `thesis_lookup`, `design_lookup`)
 - `writing/`: writing pack tools (`writing_pack`, `writing_plan`,
   `writing_task`, `writing_import`, `writing_patch`)
 

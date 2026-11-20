@@ -107,12 +107,12 @@ Plugin ini dideklarasikan oleh `.claude-plugin/plugin.json`. Skill dibaca
 dari `skills/`, dan MCP server `paperassist` berada di
 `mcp_servers/stdio.py` (JSON-RPC over stdio).
 
-MCP tools (17):
+MCP tools (18):
 
 | Group | Tools |
 |---|---|
 | `paperassist` (planning & packs) | `harness_status`, `pack_scaffold`, `pack_plan`, `pack_task`, `pack_import` |
-| `paperassist` (Research OS) | `corpus_bind`, `claim_audit`, `quality_score`, `research_os`, `improvement_verify`, `journal_lookup`, `thesis_lookup` |
+| `paperassist` (Research OS) | `corpus_bind`, `claim_audit`, `quality_score`, `research_os`, `improvement_verify`, `journal_lookup`, `thesis_lookup`, `design_lookup` |
 | `writing` | `writing_pack`, `writing_plan`, `writing_task`, `writing_import`, `writing_patch` |
 
 Setiap tool mengiklankan `inputSchema` lengkap (nama, tipe, default, wajib),
@@ -223,7 +223,8 @@ Mode paper adalah default (`document_kind: "paper"`). Pembagian kepemilikan:
 |---|---|---|
 | Introduction, Related Work, Background, Method | harness | task `section-*` |
 | Experimental Setup, Results | **penulis** | ditulis di dalam blok terproteksi; gate menolak hasil baru di luarnya |
-| Discussion, Limitations, Conclusion | harness | boleh menyebut ulang angka **hanya** bila angka itu ada di blok terproteksi, atau merujuk tabel/gambar di sana dengan `ef` |
+| Discussion, Limitations, Conclusion | harness | boleh menyebut ulang angka **hanya** bila angka itu ada di blok terproteksi, atau merujuk tabel/gambar di sana dengan `
+ef` |
 | Declarations (competing interests, funding, data availability, CRediT, penggunaan AI) | **penulis** | blok terproteksi kedua di skeleton, berisi templat dalam komentar |
 
 Gate impor menolak sisa gaya asisten ("As an AI language model…", "Berikut
@@ -335,7 +336,8 @@ Parameter opsional untuk standar pelaporan:
 
 | Parameter | Fungsi |
 |---|---|
-| `paper_type` | `auto` (default), `review`, atau `empirical`. Menentukan sinyal metode: PRISMA/PRISMA-S untuk review; desain, data, analisis, dan statistik untuk empiris |
+| `paper_type` | `auto` (default), `review`, atau `empirical` (keluarga desain). Boleh juga langsung berisi kunci desain, mis. `rct` |
+| `research_design` | `auto` (default) atau kunci/alias desain (lihat tabel **Desain penelitian**). Menentukan standar pelaporan yang dipakai dimensi `method_rigour` |
 | `records_paths` | Dokumen count PRISMA (mis. `prisma_flow.json` dengan `records_identified`, `duplicates_removed`, `records_screened`, `records_excluded`, `reports_sought`, `reports_not_retrieved`, `reports_assessed`, `reports_excluded`, `studies_included`, serta rincian opsional `identified_by_database` / `exclusion_reasons`). Aritmetikanya dicek per tahap |
 | `journal_profile` / `required_declarations` | Deklarasi wajib dari profil jurnal (mis. `intl-elsevier-elsarticle`) atau daftar eksplisit: `competing_interests`, `funding`, `data_availability`, `ai_use`, `author_contributions`, `code_availability`, `ethics` |
 | `reference_policy` | `{recent_years, min_recent_share, min_primary_share, reference_year}`; default 10 tahun, 60%, 60% (bersifat anjuran, sesuaikan dengan jurnal) |
@@ -346,6 +348,46 @@ Return value memuat `status`, `executor: "ai-harness"`, `provider_calls: 0`,
 `binding / ledger / quality / source_coverage / artifacts`. Untuk revisi,
 jalankan `improvement_verify` dengan `before_path` dan `after_path`; ia
 menolak revisi bila skor grounding atau dimensi turun melebihi ambang.
+
+## Desain penelitian
+
+Research OS tidak hanya menilai SLR. Setiap desain dipetakan ke pedoman
+pelaporannya (sebagian besar terdaftar di EQUATOR Network), lalu diubah menjadi
+item yang dicek di Method, di seluruh naskah (reprodusibilitas), dan di Results.
+`auto` memilih desain paling spesifik yang disebut naskah (turunan menang atas
+induknya, mis. meta-analisis atas systematic review). Hasilnya tercatat di
+`quality-report.json` dan `reporting-checks.json`, beserta kandidat yang
+terdeteksi. Bila tebakan salah, set `research_design` secara eksplisit.
+
+| Kategori | Kunci | Desain | Pedoman |
+|---|---|---|---|
+| evidence synthesis | `meta_analysis` (turunan `systematic_review`) | Systematic review with meta-analysis | PRISMA 2020 (+ MOOSE for observational studies) |
+| evidence synthesis | `systematic_review` | Systematic literature review | PRISMA 2020 and PRISMA-S (search reporting) |
+| evidence synthesis | `scoping_review` | Scoping review | PRISMA-ScR (22 items); JBI scoping review methodology |
+| evidence synthesis | `bibliometric` | Bibliometric analysis | BIBLIO (preliminary, 20 items) |
+| evidence synthesis | `narrative_review` | Narrative or integrative review | SANRA (quality of narrative reviews, 6 items) |
+| quantitative | `rct` | Randomised controlled trial | CONSORT 2025 (30 items + flow diagram) |
+| quantitative | `quasi_experiment` | Quasi-experiment (non-randomised evaluation) | TREND statement |
+| quantitative | `observational` | Observational study (cohort, case-control, cross-sectional) | STROBE (22 items) |
+| quantitative | `survey` | Survey / questionnaire study | CROSS (survey studies); CHERRIES for web surveys |
+| quantitative | `diagnostic_accuracy` | Diagnostic accuracy study | STARD 2015 |
+| quantitative | `prediction_model` | Prediction model (regression or machine learning) | TRIPOD+AI |
+| quantitative | `ml_experiment` | Machine learning / computational experiment | REFORMS (32 items, 8 modules); NeurIPS paper checklist |
+| quantitative | `empirical` | Empirical study (general) | General empirical reporting (ACM SIGSOFT General Standard; APA JARS-Quant) |
+| qualitative | `qualitative` | Qualitative study (interviews, focus groups, observation) | SRQR (21 items); COREQ (32 items) for interviews and focus groups |
+| mixed methods | `mixed_methods` | Mixed methods study | GRAMMS (Good Reporting of A Mixed Methods Study) |
+| qualitative | `case_study` | Case study | Yin case study design; ACM SIGSOFT Case Study standard |
+| design and development | `design_science` | Design science research (artefact building) | Design Science Research Methodology (DSRM, six activities); Hevner's guidelines |
+| design and development | `research_development` | Research and development (R&D) of a product | R&D models: Borg & Gall (10 steps), ADDIE (5 phases), 4D (Thiagarajan), Plomp |
+| action research | `classroom_action_research` (turunan `action_research`) | Classroom action research (PTK) | Kemmis & McTaggart cycle (plan, act and observe, reflect) |
+| action research | `action_research` | Action research | Action research cycle; ACM SIGSOFT Action Research standard |
+
+Sinyal ini heuristik teks: menunjukkan apakah sebuah item *disebut*, bukan
+apakah dikerjakan dengan baik, dan hanya mencakup item yang bisa terlihat dari
+naskah. Gunakan `design_lookup` untuk melihat item per desain, mencari lewat
+alias (`ptk`, `r&d`, `slr`, `kuasi-eksperimen`...), atau mendeteksi desain dari
+naskah. `writing_pack` menerima `research_design` dan menambahkan item pedoman
+itu ke brief section Method.
 
 ## Skills included
 

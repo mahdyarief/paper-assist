@@ -41,7 +41,8 @@ the accepted arguments. Read it and fix the call rather than guessing again.
    refinement, evidence reconciliation. Cite only keys the plan allows.
    Experimental Setup and Results are the authors' and live inside the
    protected experiment block; in the Discussion restate only numbers that
-   appear there, or point at its tables with `ef`. Never write the
+   appear there, or point at its tables with `
+ef`. Never write the
    Declarations block (funding, interests, data, CRediT, AI use): ask the
    authors to fill it.
 4. `writing_import` with `run_id` and `draft_path` (or `draft_text`).
@@ -55,8 +56,10 @@ the accepted arguments. Read it and fix the call rather than guessing again.
 
 1. `research_os` with `target_path` and, when available, `records_path`,
    `fulltext_root`, `bibliography_path` and `source_path`. For a review add
-   the PRISMA flow document to `records_paths`; set `paper_type` when `auto`
-   guesses wrong, and `journal_profile` or `required_declarations` for the
+   the PRISMA flow document to `records_paths`; set `research_design`
+   (`design_lookup` lists them: rct, survey, qualitative, design_science,
+   research_development, classroom_action_research, ...) when `auto` guesses
+   wrong, and `journal_profile` or `required_declarations` for the
    target venue. Artifacts land in `.paperassist/research-os/<run_id>/`;
    start from `index.md` and `reporting-checks.json`.
 2. Work the `revision-plan.json` findings from the top.

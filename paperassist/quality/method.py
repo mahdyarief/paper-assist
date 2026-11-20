@@ -1,4 +1,4 @@
-"""Method rigour and limitations, per paper type (PRISMA review or empirical study)."""
+"""Method rigour and limitations, judged against the research design's reporting standard."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 from ..reporting_checks import (
     FlowCheck,
 )
+from ..research_designs import DESIGNS, STATISTICS_SIGNALS, ResearchDesign
 from ._base import (
     DEFAULT_WEIGHTS,
     Dimension,
@@ -19,58 +20,13 @@ from ._base import (
     _strip_latex,
 )
 
-# Indonesian meN-/peN- prefixes mutate a root's initial consonant: saring ->
-# penyaringan, seleksi -> penyeleksian, telusur -> penelusuran. Matching the bare
-# root therefore misses the forms academic prose actually uses. The \b-anchored
-# English alternatives stay word-initial so "research" is not read as "search".
-_REVIEW_METHOD_SIGNALS: tuple[tuple[str, str], ...] = (
-    ("search strategy", r"\b(?:search|query|string)\w*|\b\w*(?:cari|telusur|nelusur)\w*"),
-    ("database enumeration", r"\b\w*(?:scopus|pubmed|web of science|ieee|scholar|garuda|database|basis data|pangkalan data)\w*"),
-    ("search dates", r"last searched|search(?:es)? (?:was|were )?(?:conducted|performed|run) (?:on|in|between)|search date|tanggal pencarian|dilakukan pada|hingga (?:\d|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)|up to (?:\d|january|february|march|april|may|june|july|august|september|october|november|december)|as of"),
-    ("inclusion criteria", r"\b\w*(?:inclusion|inklusi|eligib|kriteria)\w*"),
-    ("exclusion criteria", r"\b\w*(?:exclusion|eksklusi)\w*"),
-    ("screening process", r"\b\w*(?:screen|skrin|saring|yaring|seleksi|yeleksi|tapis)\w*"),
-    ("independent reviewers", r"two (?:independent )?reviewers|independent(?:ly)?|dua (?:orang )?(?:reviewer|peninjau|penilai)|secara independen|kappa|inter-rater|antar-?penilai"),
-    ("extraction procedure", r"\b\w*(?:extraction|ekstraksi|charting|penilaian)\w*"),
-    ("risk-of-bias appraisal", r"risk of bias|risiko bias|\brob\s*-?2\b|robins|\bcasp\b|\bjbi\b|\bmmat\b|quadas|newcastle|amstar|critical appraisal|quality (?:appraisal|assessment)|penilaian kualitas"),
-    ("certainty of evidence", r"certainty of (?:the )?evidence|\bgrade\b (?:approach|framework|assessment)|cerqual|kepastian bukti|confidence in (?:the )?evidence"),
-    ("synthesis method", r"\b\w*(?:synthesis|sintesis|meta-analy)\w*"),
-)
-
-
-_REVIEW_REPRO_SIGNALS: tuple[tuple[str, str], ...] = (
-    ("data availability", r"data availability|ketersediaan data|dataset tersedia|extraction (?:form|data) (?:is|are) available"),
-    ("protocol or registration", r"protocol|protokol|registr|\bosf\b|prospero"),
-    ("full search strings", r"search strings?|query strings?|string pencarian|full search strateg|appendix|lampiran|supplementary"),
-    ("prisma reporting", r"prisma"),
-)
-
-
-_EMPIRICAL_METHOD_SIGNALS: tuple[tuple[str, str], ...] = (
-    ("research design", r"\b(?:design|desain|rancangan|approach|pendekatan)\w*"),
-    ("data or participants", r"\b\w*(?:dataset|data set|sampel|sample|participant|partisipan|responden|respondent|subjek|subject|populasi|population|corpus|korpus)\w*"),
-    ("procedure or instrument", r"\b\w*(?:procedure|prosedur|instrumen|instrument|kuesioner|questionnaire|setup|implementasi|implementation|pipeline)\w*"),
-    ("variables or metrics", r"\b\w*(?:metric|metrik|variabel|variable|measure|ukuran|indikator|indicator|evaluat|evaluasi)\w*"),
-    ("analysis method", r"\b\w*(?:analysis|analisis|statistic|statistik|regression|regresi|anova|t-test|uji)\w*"),
-    ("baseline or comparison", r"\b\w*(?:baseline|pembanding|comparison|perbandingan|control group|kelompok kontrol|benchmark)\w*"),
-    ("validation", r"\b\w*(?:validation|validasi|cross-validation|reliabilit|validity|validitas|held-out|test set|data uji)\w*"),
-)
-
-
-_EMPIRICAL_REPRO_SIGNALS: tuple[tuple[str, str], ...] = (
-    ("data availability", r"data availability|ketersediaan data|data (?:are|is) available|dataset tersedia|publicly available"),
-    ("code availability", r"code availability|source code|kode sumber|github\.com|gitlab\.com|zenodo|repositori"),
-    ("parameter settings", r"hyperparameter|hiperparameter|random seed|\bseed\b|learning rate|parameter settings?|konfigurasi|configuration"),
-    ("computing environment", r"\bgpu\b|\bcpu\b|hardware|perangkat keras|software version|versi|python \d|pytorch|tensorflow|\br \d|spss|stata"),
-)
-
-
-# Uncertainty and effect reporting in the results (APA/CONSORT-style practice).
-_STATISTICS_SIGNALS: tuple[tuple[str, str], ...] = (
-    ("uncertainty", r"confidence interval|interval kepercayaan|\bci\b|standard deviation|simpangan baku|standard error|\bstd\b|\bsd\b|\\pm|±"),
-    ("significance or effect", r"p-?value|nilai p|\bp\s*[<=>]|effect size|ukuran efek|cohen|odds ratio|\bor\b\s*=|hazard ratio"),
-    ("sample size", r"\bn\s*=\s*\d|sample size|ukuran sampel|jumlah sampel|\d+ (?:participants|responden|samples|sampel)"),
-)
+# Signal tables live in the research-design registry; these names keep the
+# general review and empirical tables addressable for callers and tests.
+_REVIEW_METHOD_SIGNALS = DESIGNS["systematic_review"].method_signals
+_REVIEW_REPRO_SIGNALS = DESIGNS["systematic_review"].repro_signals
+_EMPIRICAL_METHOD_SIGNALS = DESIGNS["empirical"].method_signals
+_EMPIRICAL_REPRO_SIGNALS = DESIGNS["empirical"].repro_signals
+_STATISTICS_SIGNALS = STATISTICS_SIGNALS
 
 
 def _flow_findings(flow: FlowCheck | None) -> tuple[float, list[Finding]]:
@@ -118,12 +74,30 @@ def _flow_findings(flow: FlowCheck | None) -> tuple[float, list[Finding]]:
 
 
 def _dimension_method(
-    text: str, *, paper_type: str = "review", flow: FlowCheck | None = None
+    text: str,
+    *,
+    paper_type: str = "review",
+    flow: FlowCheck | None = None,
+    design: ResearchDesign | None = None,
 ) -> Dimension:
+    """Method rigour: 0.6 method items + 0.2 reproducibility + 0.2 results/flow.
+
+    ``design`` selects the reporting standard (see
+    :mod:`paperassist.research_designs`); without one, ``paper_type`` selects
+    the general systematic-review or empirical standard.
+    """
+
+    if design is None:
+        design = DESIGNS["systematic_review" if paper_type == "review" else "empirical"]
     bodies = _section_bodies(text)
     method = bodies.get("method", "")
     lowered = _strip_latex(method).lower()
     findings: list[Finding] = []
+    base: dict[str, Any] = {
+        "paper_type": design.family,
+        "research_design": design.key,
+        "guideline": design.guideline,
+    }
     if not method:
         findings.append(
             Finding(
@@ -137,13 +111,10 @@ def _dimension_method(
             name="method_rigour",
             score=0.0,
             weight=DEFAULT_WEIGHTS["method_rigour"],
-            measurements={"paper_type": paper_type, "signals": [], "repro": []},
+            measurements={**base, "signals": [], "repro": []},
             findings=tuple(findings),
         )
-    if paper_type == "review":
-        method_signals, repro_signals = _REVIEW_METHOD_SIGNALS, _REVIEW_REPRO_SIGNALS
-    else:
-        method_signals, repro_signals = _EMPIRICAL_METHOD_SIGNALS, _EMPIRICAL_REPRO_SIGNALS
+    method_signals, repro_signals = design.method_signals, design.repro_signals
     covered = [name for name, pattern in method_signals if re.search(pattern, lowered)]
     missing = [name for name, _ in method_signals if name not in covered]
     for name in missing:
@@ -152,42 +123,52 @@ def _dimension_method(
                 dimension="method_rigour",
                 severity="warning",
                 message=f"method does not describe: {name}",
-                remedy=f"add the {name} so the procedure is reproducible",
+                remedy=f"add the {name}, as {design.guideline} asks",
             )
         )
     whole = _strip_latex(text).lower()
     repro = [name for name, pattern in repro_signals if re.search(pattern, whole)]
     measurements: dict[str, Any] = {
-        "paper_type": paper_type,
+        **base,
         "signals": covered,
         "missing": missing,
         "repro": repro,
     }
-    if paper_type == "review":
+    if design.flow == "prisma":
         third, flow_notes = _flow_findings(flow)
         findings.extend(flow_notes)
         measurements["prisma_flow"] = flow.to_dict() if flow else None
     else:
-        results = _strip_latex(bodies.get("results", "")).lower()
-        stats = [name for name, pattern in _STATISTICS_SIGNALS if re.search(pattern, results)]
-        measurements["statistics"] = stats
-        if results and len(stats) < len(_STATISTICS_SIGNALS):
-            absent = [name for name, _ in _STATISTICS_SIGNALS if name not in stats]
+        results_signals = design.results_signals or STATISTICS_SIGNALS
+        # The raw body keeps \pm and quotation marks that some signals need.
+        raw_results = bodies.get("results", "")
+        results = (_strip_latex(raw_results) + "\n" + raw_results).lower()
+        reported = [name for name, pattern in results_signals if re.search(pattern, results)]
+        measurements["results_items"] = reported
+        if results_signals == STATISTICS_SIGNALS:
+            measurements["statistics"] = reported
+        if raw_results.strip() and len(reported) < len(results_signals):
+            absent = [name for name, _ in results_signals if name not in reported]
+            remedy = (
+                "report variability (SD/CI), effect size or test result, and "
+                "sample size beside each headline number"
+                if set(absent) <= {name for name, _ in STATISTICS_SIGNALS}
+                else f"report these in the results, as {design.guideline} expects"
+            )
             findings.append(
                 Finding(
                     dimension="method_rigour",
                     severity="warning",
                     message="results do not report: " + ", ".join(absent),
-                    remedy=(
-                        "report variability (SD/CI), effect size or test result, and "
-                        "sample size beside each headline number"
-                    ),
+                    remedy=remedy,
                 )
             )
-        third = len(stats) / len(_STATISTICS_SIGNALS) if results else 0.0
+        third = len(reported) / len(results_signals) if raw_results.strip() else 0.0
+    if design.notes:
+        measurements["notes"] = design.notes
     score = (
         0.6 * (len(covered) / len(method_signals))
-        + 0.2 * (len(repro) / len(repro_signals))
+        + 0.2 * (len(repro) / len(repro_signals) if repro_signals else 1.0)
         + 0.2 * third
     )
     return Dimension(

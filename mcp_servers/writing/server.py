@@ -46,6 +46,7 @@ _WRITING_KEYS = (
     "reference_budget_bytes",
     "reference_paths",
     "require_locators",
+    "research_design",
     "sections",
     "title",
     "topic",

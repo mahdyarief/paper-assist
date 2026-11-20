@@ -9,6 +9,7 @@ from typing import Any
 from .context_inventory import (
     ContextInventory,
 )
+from .research_designs import ResearchDesign, design_method_brief, get_design
 from .writing_content import (
     _EM_DASH_RULE,
     _INDONESIAN_STYLE_RULE,
@@ -24,6 +25,7 @@ from .writing_content import (
     THESIS_DEFAULT_SECTIONS,
     WRITING_REFERENCES_FILENAME,
     WRITING_TASK_SCHEMA,
+    WritingPackError,
     _as_bool,
     _depth_profile,
     _document_kind,
@@ -65,6 +67,26 @@ class WritingTask:
         }
 
 
+_METHOD_SECTION_WORDS = ("method", "metode", "metodologi", "methodology", "materials")
+
+
+def _is_method_section(section: str) -> bool:
+    lowered = section.lower()
+    return any(word in lowered for word in _METHOD_SECTION_WORDS)
+
+
+def _payload_design(payload: Mapping[str, Any]) -> ResearchDesign | None:
+    """The research design a pack's Method brief follows, when one is named."""
+
+    value = payload.get("research_design")
+    if value in (None, "", "auto"):
+        return None
+    try:
+        return get_design(str(value))
+    except ValueError as exc:
+        raise WritingPackError(str(exc)) from exc
+
+
 def _section_instructions(
     section: str,
     *,
@@ -74,8 +96,11 @@ def _section_instructions(
     profile: Mapping[str, Any] | None = None,
     context: ContextInventory | None = None,
     allow_em_dash: bool = False,
+    design: ResearchDesign | None = None,
 ) -> str:
     brief = SECTION_BRIEFS.get(section, "").strip()
+    if design is not None and _is_method_section(section):
+        brief = (brief + "\n" if brief else "") + design_method_brief(design)
     profile = profile or DEPTH_PROFILES.get(depth, DEPTH_PROFILES[DEFAULT_DEPTH])
     lines = [
         f"Write the {section} section of the manuscript in LaTeX.",
@@ -162,6 +187,7 @@ def _build_init_tasks(
     context: ContextInventory | None = None,
     allow_em_dash: bool = False,
     document_kind: str = "paper",
+    design: ResearchDesign | None = None,
 ) -> list[WritingTask]:
     profile = profile or DEPTH_PROFILES[DEFAULT_DEPTH]
     tasks: list[WritingTask] = [
@@ -182,6 +208,7 @@ def _build_init_tasks(
                 profile=profile,
                 context=context,
                 allow_em_dash=allow_em_dash,
+                design=design,
             ),
         )
     ]
@@ -204,6 +231,7 @@ def _build_init_tasks(
                     profile=profile,
                     context=context,
                     allow_em_dash=allow_em_dash,
+                    design=design,
                 ),
                 depends_on=("title-and-abstract",)
                 if section == sections[0]
@@ -466,6 +494,7 @@ def build_tasks(
                 context=context,
                 allow_em_dash=allow_em_dash,
                 document_kind=document_kind,
+                design=_payload_design(payload),
             )
         )
     if "evidence" in enabled:

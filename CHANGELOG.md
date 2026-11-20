@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Research designs beyond systematic reviews
+
+- New `paperassist.research_designs` registry: 20 designs in a small tree,
+  each mapped to its reporting guideline and turned into Method,
+  reproducibility and Results items. Evidence synthesis: systematic review
+  (PRISMA 2020/PRISMA-S) with meta-analysis as a child, scoping review
+  (PRISMA-ScR), bibliometric (BIBLIO), narrative review (SANRA). Quantitative:
+  RCT (CONSORT 2025), quasi-experiment (TREND), observational (STROBE), survey
+  (CROSS/CHERRIES), diagnostic accuracy (STARD 2015), prediction model
+  (TRIPOD+AI), ML experiment (REFORMS), general empirical. Qualitative and
+  mixed: qualitative (SRQR/COREQ), case study, mixed methods (GRAMMS). Design
+  and development: design science (DSRM), R&D (Borg & Gall, ADDIE, 4D). Action
+  research, with classroom action research (PTK, Kemmis & McTaggart) as a child.
+- `research_design` for `quality_score`, `research_os` and `writing_pack`;
+  `paper_type` also accepts a design key. `auto` picks the most specific design
+  the manuscript names within its family, so a review about machine learning
+  stays a review. Qualitative studies are no longer asked for statistics; the
+  PRISMA flow applies to systematic, scoping and meta-analytic reviews.
+- New MCP tool `design_lookup` (18 tools): list designs, look one up by key or
+  alias, or detect it from a manuscript. Quality and reporting-check artifacts
+  record the design and its guideline.
+
 ### Modularisation (no behaviour change)
 
 - `manuscript_quality.py` (1593 lines) split into the `paperassist.quality`

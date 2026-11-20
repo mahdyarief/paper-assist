@@ -14,6 +14,7 @@ from ..reporting_checks import (
     FlowCheck,
     ReferenceAudit,
     resolve_paper_type,
+    resolve_research_design,
 )
 from ._base import (
     _REFERENCE_ITEM_RE,
@@ -80,6 +81,7 @@ def score_manuscript(
     weights: Mapping[str, float] | None = None,
     corpus_size: int | None = None,
     paper_type: str | None = "auto",
+    research_design: str | None = "auto",
     prisma_flow: FlowCheck | None = None,
     declarations: DeclarationCheck | None = None,
     reference_audit: ReferenceAudit | None = None,
@@ -91,6 +93,11 @@ def score_manuscript(
     ``paper_type`` selects the reporting standard: ``review`` (PRISMA 2020 /
     PRISMA-S signals and flow arithmetic) or ``empirical`` (design, data,
     analysis, statistics); ``auto`` decides from the corpus and the text.
+    ``research_design`` narrows that to a specific design and its reporting
+    guideline (``rct`` -> CONSORT 2025, ``qualitative`` -> SRQR/COREQ,
+    ``classroom_action_research`` -> the PTK cycle, ...); ``auto`` picks the
+    most specific design the manuscript names. See
+    :mod:`paperassist.research_designs`.
     ``declarations``, ``reference_audit``, ``prisma_flow`` and
     ``locator_checks`` come from :mod:`paperassist.reporting_checks`; when a
     caller omits them, declarations are detected from the text and the other
@@ -132,6 +139,9 @@ def score_manuscript(
         raise QualityError("corpus_size must not be negative")
     try:
         resolved_type = resolve_paper_type(paper_type, text, study_count=corpus_size)
+        design = resolve_research_design(
+            research_design, text, study_count=corpus_size, paper_type=paper_type
+        )
     except ValueError as exc:
         raise QualityError(str(exc)) from exc
     if declarations is None:
@@ -156,7 +166,7 @@ def score_manuscript(
             ledger, min_anchored=min_anchored, locator_checks=locator_checks
         ),
         _dimension_evidence(ledger, binding),
-        _dimension_method(text, paper_type=resolved_type, flow=prisma_flow),
+        _dimension_method(text, paper_type=resolved_type, flow=prisma_flow, design=design),
         _dimension_limitations(text),
         _dimension_declarations(declarations),
         _dimension_references(reference_audit),
@@ -180,6 +190,7 @@ def score_manuscript(
     report = QualityReport(
         dimensions=dimensions,
         paper_type=resolved_type,
+        research_design=design.key,
         score=score,
         grade=grade,
         recommendation=recommendation,
@@ -192,6 +203,7 @@ def score_manuscript(
     return QualityReport(
         dimensions=report.dimensions,
         paper_type=report.paper_type,
+        research_design=report.research_design,
         score=report.score,
         grade=report.grade,
         recommendation=report.recommendation,
@@ -207,7 +219,8 @@ def format_quality_report(report: QualityReport) -> str:
         "",
         f"**Score:** {report.score:.3f}  |  **Grade:** {report.grade}  |  "
         f"**Recommendation:** {report.recommendation}  |  "
-        f"**Paper type:** {report.paper_type}",
+        f"**Paper type:** {report.paper_type}"
+        + (f"  |  **Design:** {report.research_design}" if report.research_design else ""),
         "",
         "| Dimension | Score | Weight |",
         "|---|---|---|",
