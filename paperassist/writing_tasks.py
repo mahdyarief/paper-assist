@@ -23,6 +23,7 @@ from .writing_content import (
     SECTION_BRIEFS,
     THESIS_BARE_SECTIONS,
     THESIS_DEFAULT_SECTIONS,
+    THESIS_PROPOSAL_SECTIONS,
     WRITING_REFERENCES_FILENAME,
     WRITING_TASK_SCHEMA,
     WritingPackError,
@@ -31,6 +32,7 @@ from .writing_content import (
     _document_kind,
     _prose_style_rule,
     _slug,
+    _thesis_stage,
 )
 
 
@@ -447,7 +449,11 @@ def build_tasks(
     if isinstance(requested, Sequence) and not isinstance(requested, str | bytes):
         sections = [str(item).strip() for item in requested if str(item).strip()]
     elif document_kind == "thesis":
-        sections = list(THESIS_DEFAULT_SECTIONS)
+        sections = list(
+            THESIS_PROPOSAL_SECTIONS
+            if _thesis_stage(payload) == "proposal"
+            else THESIS_DEFAULT_SECTIONS
+        )
     else:
         sections = list(DEFAULT_SECTIONS)
     skip_experimental = _as_bool(
@@ -519,7 +525,12 @@ def build_tasks(
             )
         )
     if "refine" in enabled:
-        refine_source = THESIS_BARE_SECTIONS if document_kind == "thesis" else REFINE_SECTIONS
+        refine_source = (
+            (THESIS_PROPOSAL_SECTIONS if _thesis_stage(payload) == "proposal"
+             else THESIS_BARE_SECTIONS)
+            if document_kind == "thesis"
+            else REFINE_SECTIONS
+        )
         refine_sections = [
             section
             for section in refine_source

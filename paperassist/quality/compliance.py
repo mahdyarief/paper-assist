@@ -6,6 +6,7 @@ from ..reporting_checks import (
     DeclarationCheck,
     ReferenceAudit,
 )
+from ..thesis_checks import FRONT_MATTER_LABELS, ThesisCheck
 from ._base import (
     DEFAULT_WEIGHTS,
     Dimension,
@@ -25,6 +26,63 @@ _DECLARATION_REMEDIES: dict[str, str] = {
     "code_availability": "link the code or state why it is not released",
     "ethics": "report ethics approval and informed consent for human participants",
 }
+
+
+def _dimension_thesis_statements(thesis: ThesisCheck, check: DeclarationCheck) -> Dimension:
+    """A thesis is judged on its front matter, not on journal declarations.
+
+    The approval page, originality statement and abstracts a campus guide
+    requires stand where funding and competing-interest statements stand in
+    an article; ethics approval still counts when people took part.
+    """
+
+    required = list(thesis.front_matter_required)
+    missing = list(thesis.front_matter_missing)
+    if "ethics" in check.required:
+        required.append("ethics")
+        if "ethics" in check.missing:
+            missing.append("ethics")
+    findings = [
+        Finding(
+            dimension="declarations",
+            severity="warning",
+            message=(
+                "missing thesis statement: " + FRONT_MATTER_LABELS[name]
+                if name in FRONT_MATTER_LABELS
+                else f"missing declaration: {name}"
+            ),
+            remedy=_DECLARATION_REMEDIES.get(
+                name, "add it to the front matter as the campus guide prescribes"
+            ),
+        )
+        for name in missing
+    ]
+    findings.extend(
+        Finding(
+            dimension="declarations",
+            severity="info",
+            message="recommended thesis statement absent: " + FRONT_MATTER_LABELS[name],
+            remedy=(
+                "many campuses now ask for it; check the current guide"
+                if name != "preface"
+                else "add a Kata Pengantar if the guide lists one"
+            ),
+        )
+        for name in thesis.front_matter_recommended_missing
+    )
+    score = (len(required) - len(missing)) / len(required) if required else 1.0
+    return Dimension(
+        name="declarations",
+        score=_clamp(score),
+        weight=DEFAULT_WEIGHTS["declarations"],
+        measurements={
+            "document_kind": "thesis",
+            "front_matter": thesis.to_dict()["front_matter"],
+            "ethics_required": "ethics" in check.required,
+            "ethics_present": "ethics" in check.present,
+        },
+        findings=tuple(findings),
+    )
 
 
 def _dimension_declarations(check: DeclarationCheck) -> Dimension:

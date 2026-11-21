@@ -26,6 +26,11 @@ from ._base import (
     _strip_latex,
 )
 
+_HEADING_LABEL_RE = re.compile(
+    r"\\(?:part|chapter|section|subsection|subsubsection)\*?\s*\{[^{}]*\}\s*"
+    r"\\label\s*\{([^{}]*)\}"
+)
+
 
 def _dimension_formulaic_prose(text: str) -> Dimension:
     prose = _NON_PROSE_RE.sub(lambda m: " " * len(m.group(0)), text)
@@ -90,7 +95,11 @@ def _dimension_tables_figures(text: str, *, asset_root: str | None = None) -> Di
     tables = len(_TABLE_RE.findall(text))
     figures = len(_FIGURE_RE.findall(text))
     captions = len(_CAPTION_RE.findall(text))
-    labels = set(_LABEL_RE.findall(text))
+    # A label right after a heading (\chapter{Pendahuluan}\label{ch:...}) marks
+    # a cross-reference target for the table of contents, not a float; leaving
+    # it unreferenced is harmless and every thesis template does it.
+    heading_labels = set(_HEADING_LABEL_RE.findall(text))
+    labels = set(_LABEL_RE.findall(text)) - heading_labels
     refs = {
         part.strip()
         for group in _REF_RE.findall(text)

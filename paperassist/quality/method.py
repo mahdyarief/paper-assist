@@ -103,8 +103,12 @@ def _dimension_method(
     paper_type: str = "review",
     flow: FlowCheck | None = None,
     design: ResearchDesign | None = None,
+    planned: bool = False,
 ) -> Dimension:
     """Method rigour: 0.6 method items + 0.2 reproducibility + 0.2 results/flow.
+
+    ``planned`` is a thesis proposal: the method describes a study not yet run,
+    so the score is the method and reproducibility items alone.
 
     ``design`` selects the reporting standard (see
     :mod:`paperassist.research_designs`); without one, ``paper_type`` selects
@@ -164,7 +168,10 @@ def _dimension_method(
         "missing": missing,
         "repro": repro,
     }
-    if design.flow == "prisma":
+    if planned:
+        third = 1.0
+        measurements["planned"] = True
+    elif design.flow == "prisma":
         third, flow_notes = _flow_findings(flow)
         findings.extend(flow_notes)
         measurements["prisma_flow"] = flow.to_dict() if flow else None
@@ -231,7 +238,18 @@ def _dimension_method(
     )
 
 
-def _dimension_limitations(text: str) -> Dimension:
+def _dimension_limitations(
+    text: str, *, thesis: bool = False, required: bool = True
+) -> Dimension:
+    if not required:
+        # A thesis proposal states its scope (Batasan Masalah), not the
+        # limitations of a study it has yet to run.
+        return Dimension(
+            name="limitations",
+            score=1.0,
+            weight=DEFAULT_WEIGHTS["limitations"],
+            measurements={"required": False},
+        )
     bodies = _section_bodies(text)
     lowered = text.lower()
     findings: list[Finding] = []
@@ -242,6 +260,18 @@ def _dimension_limitations(text: str) -> Dimension:
         nested = _heading_body(text, "limitations")
         if nested.strip():
             bodies = {**bodies, "limitations": nested}
+            present = True
+    if not present and thesis:
+        # A thesis states its limitations in the closing chapter, often in
+        # the Saran paragraphs rather than under a heading of their own.
+        closing = _strip_latex(bodies.get("conclusion", ""))
+        sentences = [
+            sentence
+            for sentence in re.split(r"(?<=[.!?])\s+", closing)
+            if re.search(r"keterbatasan|terbatas pada|limitation|limited to", sentence, re.I)
+        ]
+        if sentences:
+            bodies = {**bodies, "limitations": " ".join(sentences)}
             present = True
     if not present:
         findings.append(

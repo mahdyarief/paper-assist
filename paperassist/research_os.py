@@ -63,6 +63,7 @@ from .manuscript_quality import (
 from .participant_flow import ARM_KEYS, check_participant_flow
 from .path_safety import UnsafePathError, reject_symlink_components
 from .provenance_audit import DEFAULT_MIN_ANCHORED, extract_locators, load_locators_payload
+from .quality.scoring import DEFAULT_DEPTH_TARGET
 from .reporting_checks import (
     ReferencePolicy,
     audit_references,
@@ -76,6 +77,7 @@ from .reporting_checks import (
 )
 from .research_designs import explain_detection
 from .source_coverage import SourceCoverage, audit_source_coverage, format_source_coverage
+from .thesis_checks import check_thesis, resolve_document_kind
 
 RESEARCH_OS_ROOT = Path(".paperassist") / "research-os"
 RESEARCH_OS_SCHEMA = "paperassist.research-os/v1"
@@ -436,6 +438,21 @@ def _reporting_checks(
             retractions=retractions,
         )
 
+    try:
+        document_kind = resolve_document_kind(payload.get("document_kind"), manuscript)
+        thesis = (
+            check_thesis(
+                manuscript,
+                profile=payload.get("thesis_profile") or "auto",
+                required_front_matter_items=payload.get("required_front_matter"),
+                stage=payload.get("thesis_stage") or "auto",
+            )
+            if document_kind == "thesis"
+            else None
+        )
+    except ValueError as exc:
+        raise ResearchOSError(str(exc)) from exc
+
     locator_checks = None
     texts = _bound_texts(root, payload, binding)
     if locators and texts:
@@ -452,6 +469,8 @@ def _reporting_checks(
         "declarations": declarations,
         "reference_audit": reference_audit,
         "locator_checks": locator_checks,
+        "document_kind": document_kind,
+        "thesis": thesis,
     }
 
 
@@ -529,7 +548,7 @@ def run_research_os(
             binding=binding,
             bibliography_entries=bibliography_entries,
             bibliography_text=bibliography_text,
-            depth_target=int(payload.get("depth_target") or 500),
+            depth_target=int(payload.get("depth_target") or DEFAULT_DEPTH_TARGET),
             min_anchored=float(payload.get("min_anchored") or DEFAULT_MIN_ANCHORED),
             allow_em_dash=bool(payload.get("allow_em_dash", False)),
             corpus_size=study_count,
@@ -541,6 +560,8 @@ def run_research_os(
             reference_audit=checks["reference_audit"],
             locator_checks=checks["locator_checks"],
             asset_root=str(manuscript_path.parent),
+            document_kind=checks["document_kind"],
+            thesis=checks["thesis"],
         )
     except QualityError as exc:
         raise ResearchOSError(str(exc)) from exc
@@ -615,6 +636,8 @@ def run_research_os(
         _json(
             {
                 "paper_type": checks["paper_type"],
+                "document_kind": checks["document_kind"],
+                "thesis": checks["thesis"].to_dict() if checks["thesis"] else None,
                 "research_design": checks["research_design"].to_dict(),
                 "prisma_flow": checks["prisma_flow"].to_dict()
                 if checks["prisma_flow"]

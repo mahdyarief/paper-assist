@@ -47,10 +47,22 @@ GRADE_BANDS: tuple[tuple[str, float], ...] = (
 _SECTION_ALIASES: dict[str, tuple[str, ...]] = {
     "abstract": ("abstract", "abstrak"),
     "introduction": ("introduction", "pendahuluan"),
-    "related": ("related work", "literature", "tinjauan", "state of the art"),
+    "related": (
+        "related work",
+        "literature",
+        "tinjauan",
+        "state of the art",
+        "landasan teori",
+        "kajian teori",
+        "kajian pustaka",
+        "theoretical framework",
+    ),
     "method": (
         "method",
         "metode",
+        # "Metodologi Penelitian", the usual BAB III title, contains neither
+        # "metode" nor "methodology".
+        "metodologi",
         "materials and methods",
         "methodology",
         "experimental setup",
@@ -60,9 +72,9 @@ _SECTION_ALIASES: dict[str, tuple[str, ...]] = {
         "desain penelitian",
         "rancangan penelitian",
     ),
-    "results": ("result", "hasil", "findings", "temuan"),
+    "results": ("result", "hasil", "findings", "temuan", "pengujian"),
     "discussion": ("discussion", "pembahasan", "diskusi"),
-    "conclusion": ("conclusion", "kesimpulan", "closing"),
+    "conclusion": ("conclusion", "kesimpulan", "simpulan", "penutup", "closing"),
     "limitations": ("limitation", "keterbatasan", "threats to validity"),
     "background": ("background", "latar belakang"),
 }
@@ -180,6 +192,7 @@ class QualityReport:
     dimensions: tuple[Dimension, ...] = ()
     paper_type: str = "review"
     research_design: str = ""
+    document_kind: str = "article"
     score: float = 0.0
     grade: str = "E"
     recommendation: str = "reject"
@@ -217,6 +230,7 @@ class QualityReport:
             "source_sha256": self.source_sha256,
             "paper_type": self.paper_type,
             "research_design": self.research_design,
+            "document_kind": self.document_kind,
             "score": round(self.score, 4),
             "grade": self.grade,
             "recommendation": self.recommendation,
@@ -298,6 +312,11 @@ def _section_bodies(text: str) -> dict[str, str]:
     bodies: dict[str, list[str]] = {}
     current: tuple[str, ...] = ()
     start = 0
+    # In a thesis a \section is a subsection of its \chapter: "3.1 Data" sits
+    # inside "BAB III Metodologi" and must not cut the chapter's body short.
+    nested_levels: tuple[str, ...] = ("subsection", "subsubsection")
+    if any(match.group(1).lower() == "chapter" for match in entries):
+        nested_levels = ("section", "subsection", "subsubsection")
 
     def close(end: int) -> None:
         for kind in current:
@@ -307,7 +326,7 @@ def _section_bodies(text: str) -> dict[str, str]:
         # A subsection heading never closes the section around it, even when its
         # title happens to contain a word such as "limitations": that paragraph
         # still argues the discussion it sits in.
-        if match.group(1).lower() in ("subsection", "subsubsection"):
+        if match.group(1).lower() in nested_levels:
             continue
         kinds = _section_kinds(match.group(2).strip())
         # An unrecognised top-level heading opens a new part of the document,

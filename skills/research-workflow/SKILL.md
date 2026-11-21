@@ -34,15 +34,18 @@ the accepted arguments. Read it and fix the call rather than guessing again.
 ## Loop B: LaTeX paper or thesis draft
 
 1. Optionally `journal_lookup` or `thesis_lookup` for format rules; a thesis
-   profile goes in as `thesis_profile: {"profile_id": "..."}`.
+   profile goes in as `thesis_profile: {"profile_id": "..."}`, and its
+   preamble (margins, spacing, font) then heads the skeleton.
 2. `writing_pack` with `topic`, `title`, and for a thesis
-   `document_kind: "thesis"` plus `thesis_type`.
+   `document_kind: "thesis"` plus `thesis_type`; add `thesis_stage:
+   "proposal"` for a seminar proposal (Chapters 1-3 only). The approval page,
+   originality statement, preface and English abstract are the author's:
+   leave them for the student to fill, as with the Declarations block.
 3. Work through `writing_task` items in order: sections, citation rounds,
    refinement, evidence reconciliation. Cite only keys the plan allows.
    Experimental Setup and Results are the authors' and live inside the
    protected experiment block; in the Discussion restate only numbers that
-   appear there, or point at its tables with `
-ef`. Never write the
+   appear there, or point at its tables with `\ref`. Never write the
    Declarations block (funding, interests, data, CRediT, AI use): ask the
    authors to fill it.
 4. `writing_import` with `run_id` and `draft_path` (or `draft_text`).
@@ -62,7 +65,12 @@ ef`. Never write the
    (`design_lookup` lists them: rct, survey, qualitative, design_science,
    research_development, classroom_action_research, ...) when `auto` guesses
    wrong, and `journal_profile` or `required_declarations` for the
-   target venue. Artifacts land in `.paperassist/research-os/<run_id>/`;
+   target venue. For a thesis, `document_kind` and `thesis_stage` default to
+   `auto`; pass `thesis_profile` (the campus profile id) and, when the guide
+   differs, `required_front_matter`. Check the `thesis` block in
+   `reporting-checks.json`: missing front matter, Chapter 1 elements, whether
+   research questions, objectives and conclusions line up, and layout.
+   Artifacts land in `.paperassist/research-os/<run_id>/`;
    start from `index.md` and `reporting-checks.json`.
 2. Work the `revision-plan.json` findings from the top.
 3. Rewrite only sentences in `narrative.jsonl`. Sentences in

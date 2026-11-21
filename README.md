@@ -214,6 +214,43 @@ Perilaku mode tesis:
 - `plan.json` memuat `document_kind` dan `thesis_profile` (kelas dokumen, bahasa,
   style bibliografi, dan flag front matter) yang **bisa di-override** lewat
   `thesis_profile`, mis. `{"documentclass":"book","language":"english"}`.
+- Skeleton memuat halaman milik penulis (Lembar Pengesahan, Pernyataan
+  Keaslian, Kata Pengantar, Abstract berbahasa Inggris) sebagai komentar yang
+  tidak ditulis harness, serta usulan subbab Bab 1 (Latar Belakang, Rumusan
+  Masalah, Tujuan, Manfaat, Batasan Masalah, Sistematika) dan bab penutup
+  (Kesimpulan, Keterbatasan Penelitian, Saran). Dengan
+  `thesis_profile: {profile_id: ...}` preamble profil (margin, spasi, font)
+  langsung dipakai.
+- `thesis_stage: "proposal"` (atau `thesis_type: "proposal"`) membuat dokumen
+  seminar proposal: Bab 1–3, Lembar Persetujuan, dan Jadwal Penelitian di
+  outline metode; task dan refine hanya untuk tiga bab itu.
+
+### Pemeriksaan tesis di Research OS
+
+`quality_score` dan `research_os` menerima `document_kind` (`auto` default,
+`article`, `thesis`), `thesis_profile` (id profil, atau `auto` untuk
+mendeteksi), `thesis_stage` (`auto`, `proposal`, `final`) dan, di
+`research_os`, `required_front_matter`. Mode `auto` mengenali tesis dari kata
+skripsi/tesis/disertasi, "BAB I" atau lembar pengesahan di bagian awal, atau
+dari kelas `report`/`book` dengan bab bernomor. Tahap `auto` membaca kata
+"proposal tesis/usulan penelitian" di halaman judul, lalu ada tidaknya bab hasil
+atau kesimpulan.
+
+| Pemeriksaan | Isi | Dimensi |
+|---|---|---|
+| Front matter | halaman judul, lembar pengesahan/persetujuan, pernyataan keaslian, abstrak (dan abstract berbahasa Inggris untuk tesis berbahasa Indonesia), daftar isi/tabel/gambar, kata pengantar, sesuai `front_matter` profil; pernyataan penggunaan AI dan persetujuan publikasi dianjurkan | `declarations` (menggantikan pernyataan jurnal: competing interests, funding, data availability); etik tetap diminta bila ada partisipan |
+| Bab 1 | Latar Belakang, Rumusan Masalah, Tujuan, Batasan Masalah wajib; Manfaat dan Sistematika dicatat | `structure` |
+| Keselarasan | jumlah butir rumusan masalah = jumlah tujuan; butir kesimpulan ≥ jumlah rumusan masalah | `structure` |
+| Tata letak | ukuran font, kertas, spasi baris (`\onehalfspacing`, `\linespread`, `\setstretch`) dan margin `geometry` dibandingkan dengan profil | `structure` (info, tanpa pengaruh skor) |
+| Bab dan abstrak | `\section` di dalam `\chapter` dibaca sebagai subbab; "Metodologi Penelitian", "Landasan Teori", "Simpulan", "Penutup", "Pengujian" dikenali; abstrak boleh berupa `\chapter*{Abstrak}` | `structure`, `abstract`, `depth` |
+| Panjang | target 1.500 kata per bab (bukan 500 per bagian artikel); batas abstrak 600 kata | `depth`, `abstract` |
+| Keterbatasan | subbab Keterbatasan Penelitian, atau kalimat keterbatasan di bab Kesimpulan dan Saran | `limitations` |
+
+Pada tahap proposal hanya halaman judul, lembar persetujuan dan daftar isi yang
+diwajibkan; bagian yang diminta hanya Pendahuluan, Tinjauan Pustaka dan
+Metodologi; abstrak dan keterbatasan tidak dinilai; dan metode dinilai sebagai
+rencana, tanpa komponen hasil. `reporting-checks.json` memuat `document_kind`
+dan blok `thesis` (front matter, Bab 1, keselarasan, tata letak, jumlah kata).
 
 ## Mode paper
 

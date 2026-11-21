@@ -169,7 +169,17 @@ def _latex_skeleton(title: str, payload: Mapping[str, Any] | None = None) -> str
         document_kind=str(payload.get("document_kind") or "paper"),
         thesis_type=str(payload.get("thesis_type") or "thesis"),
         research_design=payload.get("research_design"),
+        thesis_profile_id=_profile_id(payload.get("thesis_profile")),
+        thesis_stage=str(payload.get("thesis_stage") or "final"),
     )
+
+
+def _profile_id(value: Any) -> str | None:
+    """A thesis profile id from a string or a ``{"profile_id": ...}`` mapping."""
+
+    if isinstance(value, Mapping):
+        value = value.get("profile_id")
+    return str(value).strip() if value else None
 
 
 class WritingEngine:

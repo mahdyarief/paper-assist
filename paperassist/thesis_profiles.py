@@ -51,6 +51,8 @@ class ThesisProfile:
     match_tokens: tuple[str, ...] = ()
     match_classes: tuple[str, ...] = ()
     requires_institution_token: bool = False
+    # Whole-document word range the guide sets, when it sets one.
+    word_range: tuple[int, int] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

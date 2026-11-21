@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Thesis mode across Research OS
+
+- `paperassist.thesis_checks`: `resolve_document_kind` (article/thesis/auto),
+  `resolve_thesis_stage` (proposal/final/auto) and `check_thesis`, covering
+  front matter against the thesis profile, the Chapter 1 elements, research
+  question/objective/conclusion counts, preamble layout (font size, paper,
+  line spacing, geometry margins) and an optional word range.
+- `score_manuscript`, `quality_score` and `research_os` take `document_kind`,
+  `thesis_profile`, `thesis_stage` (and `required_front_matter` in
+  `research_os`). For a thesis, `declarations` scores the thesis statements
+  instead of journal declarations. `structure` carries the Chapter 1 and
+  alignment findings. `depth` targets 1,500 words per chapter, and the
+  abstract may be a `\chapter*{Abstrak}`. `limitations` accepts statements in
+  the closing chapter. `QualityReport.document_kind` and
+  `reporting-checks.json` report all of it.
+- Proposal stage: Chapters 1–3 are required. Abstract and limitations are not
+  scored, and the method is judged as a plan.
+- Section parsing: in a document with `\chapter`, a `\section` is a
+  subsection and no longer cuts the chapter body short. New aliases:
+  Metodologi, Landasan Teori, Kajian Pustaka, Simpulan, Penutup, Pengujian.
+  Labels placed right after headings are no longer reported as unreferenced.
+  The abstract check now recognises empirical method words.
+- Writing pack: the thesis skeleton adds author-owned front-matter pages,
+  Chapter 1 and closing-chapter outlines, and the profile preamble when
+  `thesis_profile.profile_id` is set. `thesis_stage: "proposal"` builds a
+  Chapter 1–3 proposal with tasks for those chapters only.
+- `ThesisProfile.word_range` (optional).
+
 ## 4.1.0 — 2026-11-21
 
 ### Non-empirical papers, benchmarks and systems

@@ -112,6 +112,14 @@ THESIS_DEFAULT_SECTIONS: tuple[str, ...] = (
 )
 
 
+# A thesis proposal (seminar proposal) carries Chapters 1-3 only.
+THESIS_PROPOSAL_SECTIONS: tuple[str, ...] = (
+    "Pendahuluan",
+    "Tinjauan Pustaka",
+    "Metodologi Penelitian",
+)
+
+
 THESIS_BARE_SECTIONS: tuple[str, ...] = (
     "Abstrak",
     "Pendahuluan",
@@ -279,6 +287,16 @@ def _document_kind(payload: Mapping[str, Any]) -> str:
     if kind in {"thesis", "tesis", "dissertation", "disertasi", "skripsi"}:
         return "thesis"
     return "paper"
+
+
+def _thesis_stage(payload: Mapping[str, Any]) -> str:
+    """``proposal`` when the payload asks for a thesis proposal, else ``final``."""
+
+    stage = str(payload.get("thesis_stage") or "").strip().lower()
+    thesis_type = str(payload.get("thesis_type") or "").strip().lower()
+    if stage in {"proposal", "usulan", "seminar proposal"} or thesis_type == "proposal":
+        return "proposal"
+    return "final"
 
 
 # Chapter -> section label used in the working skeleton. This mapping is the

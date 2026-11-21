@@ -106,6 +106,10 @@ _RESEARCH_KEYS = frozenset(
         "journal_profile",
         "reference_policy",
         "retraction_db_path",
+        "document_kind",
+        "thesis_profile",
+        "required_front_matter",
+        "thesis_stage",
     }
 )
 
@@ -195,8 +199,10 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                     "declarations, references, figures, readability and (advisory) "
                     "formulaic prose; research_design (or paper_type) selects the "
                     "reporting standard: PRISMA, CONSORT, STROBE, CROSS, SRQR/COREQ, "
-                    "TRIPOD+AI, REFORMS, DSRM, R&D, PTK and more. Returns a grade "
-                    "and blocking findings."
+                    "TRIPOD+AI, REFORMS, DSRM, R&D, PTK and more. document_kind=thesis "
+                    "(or auto) checks thesis front matter, Chapter 1, question-objective-"
+                    "conclusion alignment and layout against thesis_profile. Returns a "
+                    "grade and blocking findings."
                 ),
             ),
             ToolSpec(
@@ -409,6 +415,9 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
         required_declarations: list[str] | None = None,
         reference_policy: dict[str, Any] | None = None,
         flow_path: str | None = None,
+        document_kind: str = "auto",
+        thesis_profile: str | None = "auto",
+        thesis_stage: str = "auto",
     ) -> dict[str, Any]:
         """``flow_path`` is a JSON file of flow counts: PRISMA for a review,
         CONSORT for a trial or quasi-experiment, STROBE for an observational
@@ -476,9 +485,13 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
             prisma_flow=prisma_flow,
             participant_flow=participant_flow,
             asset_root=str((root / target_path).parent),
+            document_kind=document_kind,
+            thesis_profile=thesis_profile,
+            thesis_stage=thesis_stage,
         )
         return {
             "status": "ok",
+            "document_kind": report.document_kind,
             "score": round(report.score, 4),
             "grade": report.grade,
             "recommendation": report.recommendation,

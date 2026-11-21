@@ -16,6 +16,7 @@ from ..reporting_checks import (
     resolve_paper_type,
     resolve_research_design,
 )
+from ..thesis_checks import ThesisCheck, check_thesis, resolve_document_kind
 from ._base import (
     _REFERENCE_ITEM_RE,
     DEFAULT_WEIGHTS,
@@ -26,6 +27,7 @@ from ._base import (
 from .compliance import (
     _dimension_declarations,
     _dimension_references,
+    _dimension_thesis_statements,
 )
 from .grounding import (
     _dimension_citations,
@@ -47,6 +49,11 @@ from .style import (
     _dimension_readability,
     _dimension_tables_figures,
 )
+
+# Words per graded section: an article section, and a thesis chapter, which
+# carries several article sections' worth of argument.
+DEFAULT_DEPTH_TARGET = 500
+THESIS_DEPTH_TARGET = 1500
 
 
 def _reference_keys(
@@ -75,7 +82,7 @@ def score_manuscript(
     binding: CorpusBinding | None = None,
     bibliography_entries: Sequence[str] = (),
     bibliography_text: str | None = None,
-    depth_target: int = 500,
+    depth_target: int = DEFAULT_DEPTH_TARGET,
     min_anchored: float = DEFAULT_MIN_ANCHORED,
     allow_em_dash: bool = False,
     weights: Mapping[str, float] | None = None,
@@ -88,6 +95,10 @@ def score_manuscript(
     reference_audit: ReferenceAudit | None = None,
     locator_checks: Mapping[str, str] | None = None,
     asset_root: str | None = None,
+    document_kind: str | None = "auto",
+    thesis_profile: str | Mapping[str, object] | None = "auto",
+    thesis: ThesisCheck | None = None,
+    thesis_stage: str | None = "auto",
 ) -> QualityReport:
     """Score a manuscript across fourteen deterministic dimensions.
 
@@ -105,6 +116,17 @@ def score_manuscript(
     ``locator_checks`` come from :mod:`paperassist.reporting_checks`; when a
     caller omits them, declarations are detected from the text and the other
     checks are reported as not measured.
+
+    ``document_kind`` is ``article``, ``thesis`` or ``auto``. A thesis is
+    judged on its front matter (approval page, originality statement,
+    abstracts) instead of journal declarations, on Chapter 1 and on whether
+    its research questions, objectives and conclusions line up; chapters are
+    held to a longer depth target, and the layout is compared with
+    ``thesis_profile`` (a profile id, ``auto`` to detect one, or a ready
+    :class:`~paperassist.thesis_checks.ThesisCheck` passed as ``thesis``).
+    ``thesis_stage`` is ``proposal`` (Chapters 1-3: no results, conclusion,
+    abstract or limitations expected; the method is judged as a plan),
+    ``final`` or ``auto``.
 
     ``corpus_size`` is how many studies the manuscript had to synthesise. A
     binding supplies it when one exists; a caller holding extraction records
@@ -147,6 +169,16 @@ def score_manuscript(
         )
     except ValueError as exc:
         raise QualityError(str(exc)) from exc
+    try:
+        kind = resolve_document_kind(document_kind, text)
+        if kind == "thesis" and thesis is None:
+            thesis = check_thesis(text, profile=thesis_profile, stage=thesis_stage)
+    except ValueError as exc:
+        raise QualityError(str(exc)) from exc
+    is_thesis = kind == "thesis"
+    proposal = is_thesis and thesis is not None and thesis.stage == "proposal"
+    if is_thesis and depth_target == DEFAULT_DEPTH_TARGET:
+        depth_target = THESIS_DEPTH_TARGET
     if declarations is None:
         from ..reporting_checks import check_declarations
 
@@ -159,8 +191,10 @@ def score_manuscript(
         reference_audit = audit_references(parse_bib_entries(bibliography_text), cited_keys=cited)
 
     dimensions = (
-        _dimension_structure(text, depth_target=depth_target),
-        _dimension_abstract(text),
+        _dimension_structure(
+            text, depth_target=depth_target, thesis=thesis if is_thesis else None
+        ),
+        _dimension_abstract(text, thesis=is_thesis, required=not proposal),
         _dimension_depth(
             text, depth_target=depth_target, corpus_size=corpus_size
         ),
@@ -174,9 +208,12 @@ def score_manuscript(
             paper_type=resolved_type,
             flow=prisma_flow if design.flow == "prisma" else participant_flow,
             design=design,
+            planned=proposal,
         ),
-        _dimension_limitations(text),
-        _dimension_declarations(declarations),
+        _dimension_limitations(text, thesis=is_thesis, required=not proposal),
+        _dimension_thesis_statements(thesis, declarations)
+        if is_thesis and thesis is not None
+        else _dimension_declarations(declarations),
         _dimension_references(reference_audit),
         _dimension_prose_style(text, allow_em_dash=allow_em_dash),
         _dimension_tables_figures(text, asset_root=asset_root),
@@ -199,6 +236,7 @@ def score_manuscript(
         dimensions=dimensions,
         paper_type=resolved_type,
         research_design=design.key,
+        document_kind=kind,
         score=score,
         grade=grade,
         recommendation=recommendation,
@@ -212,6 +250,7 @@ def score_manuscript(
         dimensions=report.dimensions,
         paper_type=report.paper_type,
         research_design=report.research_design,
+        document_kind=report.document_kind,
         score=report.score,
         grade=report.grade,
         recommendation=report.recommendation,
@@ -228,7 +267,8 @@ def format_quality_report(report: QualityReport) -> str:
         f"**Score:** {report.score:.3f}  |  **Grade:** {report.grade}  |  "
         f"**Recommendation:** {report.recommendation}  |  "
         f"**Paper type:** {report.paper_type}"
-        + (f"  |  **Design:** {report.research_design}" if report.research_design else ""),
+        + (f"  |  **Design:** {report.research_design}" if report.research_design else "")
+        + ("  |  **Document:** thesis" if report.document_kind == "thesis" else ""),
         "",
         "| Dimension | Score | Weight |",
         "|---|---|---|",
