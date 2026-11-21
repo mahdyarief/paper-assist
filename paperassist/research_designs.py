@@ -744,6 +744,10 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         url="https://doi.org/10.2753/MIS0742-1222240302",
         aliases=("dsr", "dsrm", "design-science", "design research", "rekayasa"),
         detect=r"design science|\bdsrm?\b|design research methodology|peffers|hevner|penelitian desain|artefak (?:it|ti|sistem)|it artifact|artifact design",
+        # DSR names a methodology; ML and system words name what the artefact
+        # is built from. A study that names DSR twice builds an artefact with
+        # an LLM, it does not run an ML experiment on one.
+        outranks=("ml_experiment", "engineering_research"),
         method_signals=(
             ("problem identification and motivation", r"problem|masalah|motivat|motivasi|identifikasi"),
             ("objectives of a solution", r"objective|tujuan solusi|requirement|kebutuhan|kriteria keberhasilan|success criteria"),
@@ -1137,8 +1141,24 @@ def detection_text(text: str) -> str:
     # does not cut the whole thesis; only when it sits past the opening.
     if headings and headings[-1].start() > len(text) * 0.3:
         text = text[: headings[-1].start()]
-    head = _GUIDELINE_EXPANSIONS.sub(" ", text[:20000])
+    head = text[:DETECTION_WINDOW]
+    # A thesis states its design in the method chapter (BAB III), which sits
+    # well past the opening window; read that chapter too.
+    method = _METHOD_CHAPTER_RE.search(text)
+    if method and method.start() >= DETECTION_WINDOW:
+        following = _CHAPTER_HEADING_RE.search(text, method.end())
+        end = following.start() if following else len(text)
+        head += "\n" + text[method.start():min(end, method.start() + DETECTION_WINDOW)]
+    head = _GUIDELINE_EXPANSIONS.sub(" ", head)
     return _NEGATED_MENTIONS.sub(" ", head)
+
+
+DETECTION_WINDOW = 20000
+_CHAPTER_HEADING_RE = re.compile(r"\\chapter\*?\s*\{")
+_METHOD_CHAPTER_RE = re.compile(
+    r"\\chapter\s*\{[^{}]*(?:metode|metodologi|method|research design|rancangan penelitian)[^{}]*\}",
+    re.IGNORECASE,
+)
 
 
 _detection_text = detection_text
@@ -1226,7 +1246,8 @@ def detect_research_design(text: str, *, family: str) -> str:
     # A scoping review or bibliometric analysis that selects its records with
     # PRISMA is not thereby a systematic review: named twice, it outranks one.
     for key in list(hits):
-        if hits[key] >= 2:
+        # A design another one outranked cannot outrank in turn.
+        if hits.get(key, 0) >= 2:
             for beaten in DESIGNS[key].outranks:
                 hits.pop(beaten, None)
     order = {key: index for index, key in enumerate(RESEARCH_DESIGNS)}

@@ -63,7 +63,7 @@ from .manuscript_quality import (
 from .participant_flow import ARM_KEYS, check_participant_flow
 from .path_safety import UnsafePathError, reject_symlink_components
 from .provenance_audit import DEFAULT_MIN_ANCHORED, extract_locators, load_locators_payload
-from .quality.scoring import DEFAULT_DEPTH_TARGET
+from .quality.scoring import DEFAULT_DEPTH_TARGET, thesis_reference_policy
 from .reporting_checks import (
     ReferencePolicy,
     audit_references,
@@ -426,18 +426,6 @@ def _reporting_checks(
         except ValueError as exc:
             raise ResearchOSError(str(exc)) from exc
 
-    reference_audit = None
-    if bibliography_text:
-        from .corpus_binder import parse_bib_entries
-
-        cited = cited_keys(manuscript)
-        reference_audit = audit_references(
-            parse_bib_entries(bibliography_text),
-            cited_keys=cited,
-            policy=policy,
-            retractions=retractions,
-        )
-
     try:
         document_kind = resolve_document_kind(payload.get("document_kind"), manuscript)
         thesis = (
@@ -452,6 +440,22 @@ def _reporting_checks(
         )
     except ValueError as exc:
         raise ResearchOSError(str(exc)) from exc
+
+    if not payload.get("reference_policy") and thesis is not None:
+        # The campus guide's reference rule, when its profile states one.
+        policy = thesis_reference_policy(thesis) or policy
+
+    reference_audit = None
+    if bibliography_text:
+        from .corpus_binder import parse_bib_entries
+
+        cited = cited_keys(manuscript)
+        reference_audit = audit_references(
+            parse_bib_entries(bibliography_text),
+            cited_keys=cited,
+            policy=policy,
+            retractions=retractions,
+        )
 
     locator_checks = None
     texts = _bound_texts(root, payload, binding)

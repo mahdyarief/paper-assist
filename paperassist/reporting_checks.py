@@ -493,18 +493,24 @@ class ReferencePolicy:
     min_recent_share: float = 0.6
     min_primary_share: float = 0.6
     reference_year: int | None = None
+    # A thesis guide may set a minimum number of cited references.
+    min_entries: int = 0
 
     @classmethod
     def from_payload(cls, raw: Mapping[str, Any] | None) -> ReferencePolicy:
         if not raw:
             return cls()
-        allowed = {"recent_years", "min_recent_share", "min_primary_share", "reference_year"}
+        allowed = {
+            "recent_years", "min_recent_share", "min_primary_share", "reference_year", "min_entries",
+        }
         unknown = set(raw) - allowed
         if unknown:
             raise ValueError(f"unknown reference_policy keys: {sorted(unknown)}")
         policy = cls(**{key: raw[key] for key in raw})
         if policy.recent_years <= 0:
             raise ValueError("recent_years must be positive")
+        if policy.min_entries < 0:
+            raise ValueError("min_entries must not be negative")
         for name in ("min_recent_share", "min_primary_share"):
             if not 0 <= float(getattr(policy, name)) <= 1:
                 raise ValueError(f"{name} must be in [0, 1]")
@@ -576,6 +582,7 @@ class ReferenceAudit:
             "recent_years": self.policy.recent_years,
             "min_recent_share": self.policy.min_recent_share,
             "min_primary_share": self.policy.min_primary_share,
+            "min_entries": self.policy.min_entries,
             "retraction_db_loaded": self.retraction_db_loaded,
             "retracted": [
                 {"key": key, "doi": doi, "nature": nature}

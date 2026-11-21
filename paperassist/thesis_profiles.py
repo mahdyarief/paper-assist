@@ -53,6 +53,9 @@ class ThesisProfile:
     requires_institution_token: bool = False
     # Whole-document word range the guide sets, when it sets one.
     word_range: tuple[int, int] | None = None
+    # ReferencePolicy fields the guide sets (recent_years, min_recent_share,
+    # min_primary_share, min_entries); a caller's reference_policy overrides it.
+    reference_policy: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

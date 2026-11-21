@@ -1,7 +1,7 @@
 # PaperAssist
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v4.1.0-2563eb" alt="Version v4.1.0" />
+  <img src="https://img.shields.io/badge/version-v4.2.0-2563eb" alt="Version v4.2.0" />
   <img src="https://img.shields.io/badge/Python-3.10--3.13-3776ab?logo=python&logoColor=white" alt="Python 3.10-3.13" />
 </p>
 
@@ -245,12 +245,23 @@ atau kesimpulan.
 | Bab dan abstrak | `\section` di dalam `\chapter` dibaca sebagai subbab; "Metodologi Penelitian", "Landasan Teori", "Simpulan", "Penutup", "Pengujian" dikenali; abstrak boleh berupa `\chapter*{Abstrak}` | `structure`, `abstract`, `depth` |
 | Panjang | target 1.500 kata per bab (bukan 500 per bagian artikel); batas abstrak 600 kata | `depth`, `abstract` |
 | Keterbatasan | subbab Keterbatasan Penelitian, atau kalimat keterbatasan di bab Kesimpulan dan Saran | `limitations` |
+| Jejak rumusan masalah | setiap butir rumusan masalah dicari di bab Metodologi, bab Hasil/Pembahasan dan Kesimpulan, lewat labelnya (RQ1, "rumusan masalah 1", "tujuan pertama") atau sebagian besar kata khasnya; proposal hanya ditelusuri ke Metodologi | `structure` |
+| Abstrak dua bahasa | batas kata dan alinea dari `abstract_layout` profil; jumlah kata kunci Abstrak = Abstract; angka di kedua abstrak sama (0,82 = 0.82) | `structure` |
+| Tabel dan gambar | caption tabel di atas, caption gambar di bawah; penomoran per bab (tidak `\counterwithout`); dirujuk di teks sebelum muncul | `tables_figures` |
+| Gaya sitasi | `\bibliographystyle`/biblatex `style=` dibandingkan dengan `citation_style` profil (APA → author-year, IEEE → numerik); sitasi ketik numerik [n] dan author-year tidak boleh bercampur | `references` |
+| Jumlah pustaka | `reference_policy.min_entries` (atau `reference_policy` di profil tesis) | `references` |
 
 Pada tahap proposal hanya halaman judul, lembar persetujuan dan daftar isi yang
 diwajibkan; bagian yang diminta hanya Pendahuluan, Tinjauan Pustaka dan
 Metodologi; abstrak dan keterbatasan tidak dinilai; dan metode dinilai sebagai
 rencana, tanpa komponen hasil. `reporting-checks.json` memuat `document_kind`
-dan blok `thesis` (front matter, Bab 1, keselarasan, tata letak, jumlah kata).
+dan blok `thesis` (front matter, Bab 1, keselarasan, jejak rumusan masalah
+(`trace`), abstrak, tabel/gambar, gaya sitasi, tata letak, jumlah kata).
+
+Deteksi desain pada tesis juga membaca bab Metodologi, bukan hanya 20.000
+karakter pertama. Design science yang disebut dua kali mengalahkan
+`ml_experiment` dan `engineering_research`: tesis yang membangun artefak
+berbasis LLM tetap dinilai sebagai DSR.
 
 ## Mode paper
 
@@ -260,8 +271,7 @@ Mode paper adalah default (`document_kind: "paper"`). Pembagian kepemilikan:
 |---|---|---|
 | Introduction, Related Work, Background, Method | harness | task `section-*` |
 | Experimental Setup, Results | **penulis** | ditulis di dalam blok terproteksi; gate menolak hasil baru di luarnya |
-| Discussion, Limitations, Conclusion | harness | boleh menyebut ulang angka **hanya** bila angka itu ada di blok terproteksi, atau merujuk tabel/gambar di sana dengan `
-ef` |
+| Discussion, Limitations, Conclusion | harness | boleh menyebut ulang angka **hanya** bila angka itu ada di blok terproteksi, atau merujuk tabel/gambar di sana dengan `\ref` |
 | Declarations (competing interests, funding, data availability, CRediT, penggunaan AI) | **penulis** | blok terproteksi kedua di skeleton, berisi templat dalam komentar |
 
 Gate impor menolak sisa gaya asisten ("As an AI language model…", "Berikut

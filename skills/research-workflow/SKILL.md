@@ -69,7 +69,11 @@ the accepted arguments. Read it and fix the call rather than guessing again.
    `auto`; pass `thesis_profile` (the campus profile id) and, when the guide
    differs, `required_front_matter`. Check the `thesis` block in
    `reporting-checks.json`: missing front matter, Chapter 1 elements, whether
-   research questions, objectives and conclusions line up, and layout.
+   research questions, objectives and conclusions line up, the `trace` of
+   each research question through the method, results and conclusion
+   chapters, the two abstracts, captions and citation style, and layout. When
+   a question is not traced, label the section that answers it (RQ1) rather
+   than restating the question.
    Artifacts land in `.paperassist/research-os/<run_id>/`;
    start from `index.md` and `reporting-checks.json`.
 2. Work the `revision-plan.json` findings from the top.

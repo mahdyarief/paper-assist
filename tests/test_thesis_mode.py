@@ -52,8 +52,10 @@ def _thesis(*, questions: int = 3, objectives: int = 3, conclusions: int = 3,
         + "\\chapter*{Abstrak}\n" + "Tujuan penelitian ini adalah mendeteksi fraud klaim. "
         "Metode eksperimen dengan data klaim 2020-2024 dari basis data rumah sakit. Hasil "
         "menunjukkan F1 0,81. Kesimpulan: model layak dipakai. " * 4
+        + "\n\nKata kunci: fraud, klaim, pembelajaran mesin\n"
         + "\n\\chapter*{Abstract}\nThis study detects claim fraud. The method is an "
-        "experiment; results show F1 0.81.\n"
+        "experiment on claims from 2020-2024; results show F1 0.81.\n\n"
+        "Keywords: fraud, claims, machine learning\n"
         "\\tableofcontents\n\\listoftables\n\\listoffigures\n"
         "\\chapter{Pendahuluan}\\label{ch:pendahuluan}\n"
         "\\section{Latar Belakang}\n" + PROSE * 6
@@ -68,7 +70,7 @@ def _thesis(*, questions: int = 3, objectives: int = 3, conclusions: int = 3,
         + "\\chapter{Kesimpulan dan Saran}\\label{ch:kesimpulan}\n"
         "\\section{Kesimpulan}\n" + items(conclusions, "Kesimpulan")
         + "\\section{Saran}\n" + closing_limits + "Penelitian lanjutan perlu data lebih luas.\n"
-        "\\bibliographystyle{plain}\n\\bibliography{references}\n\\end{document}\n"
+        "\\bibliographystyle{apalike}\n\\bibliography{references}\n\\end{document}\n"
     )
 
 

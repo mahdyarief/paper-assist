@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## 4.2.0 — 2026-11-21
+
+### Thesis checks across chapters
+
+- `paperassist.thesis_extras`: each Chapter 1 research question is traced to
+  the method, results and conclusion chapters by its label (RQ1, "rumusan
+  masalah 1", "tujuan pertama") or most of its distinctive words
+  (`ThesisCheck.trace`); a proposal is traced to its method chapter only.
+- Abstrak and English abstract: word and paragraph limits read from the
+  profile's `abstract_layout`, the same keyword count, the same numbers.
+- Tables and figures: table captions above, figure captions below, numbering
+  per chapter, a text reference before the float (`tables_figures`).
+- Citation style: the declared bibliography style against the profile's
+  `citation_style`, and typed numeric and author-year citations never mixed
+  (`references`). `ReferencePolicy.min_entries` and
+  `ThesisProfile.reference_policy` set a minimum reference count.
+- Design detection: design science named twice outranks `ml_experiment` and
+  `engineering_research`, and in a thesis the method chapter is read even when
+  it lies past the first 20,000 characters. Unchanged on the 242 calibration
+  texts.
+- Fixed a broken `\ref` in the README ownership table.
 
 ### Thesis mode across Research OS
 

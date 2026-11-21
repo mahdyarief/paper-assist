@@ -24,6 +24,12 @@ from ._base import (
 _STUDY_WORDS = 25
 
 
+# Thesis checks that cost the structure score: Chapter 1, research questions
+# against objectives and conclusions, their trace through the chapters, and
+# the two abstracts.
+_STRUCTURAL_CHECKS = ("chapter_one", "alignment", "trace", "abstract")
+
+
 def _dimension_structure(
     text: str, *, depth_target: int, thesis: ThesisCheck | None = None
 ) -> Dimension:
@@ -75,7 +81,10 @@ def _dimension_structure(
     if thesis is not None:
         # Chapter 1 elements and question-objective-conclusion alignment cost a
         # little each; layout and length against the campus profile are advice.
-        structural = [i for i in thesis.issues if i.check in ("chapter_one", "alignment")]
+        structural = [
+            i for i in thesis.issues
+            if i.check in _STRUCTURAL_CHECKS and i.severity != "info"
+        ]
         score *= max(0.7, 1 - 0.05 * len(structural))
         findings.extend(
             Finding(
@@ -85,13 +94,13 @@ def _dimension_structure(
                 remedy=issue.remedy,
             )
             for issue in thesis.issues
-            if issue.check in ("chapter_one", "alignment", "layout", "length")
+            if issue.check in (*_STRUCTURAL_CHECKS, "layout", "length")
         )
         measurements["thesis"] = {
             key: value
             for key, value in thesis.to_dict().items()
             if key in ("profile_id", "stage", "chapters", "chapter_one", "alignment",
-                       "layout_mismatches", "words", "word_range")
+                       "trace", "abstracts", "layout_mismatches", "words", "word_range")
         }
     return Dimension(
         name="structure",

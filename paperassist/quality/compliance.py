@@ -170,6 +170,18 @@ def _dimension_references(audit: ReferenceAudit | None) -> Dimension:
                 remedy="prefer primary peer-reviewed sources over books, web pages and preprints",
             )
         )
+    if policy.min_entries and audit.entries < policy.min_entries:
+        findings.append(
+            Finding(
+                dimension="references",
+                severity="warning",
+                message=(
+                    f"{audit.entries} cited references; the guide asks for at least "
+                    f"{policy.min_entries}"
+                ),
+                remedy="ground the review of literature in more primary sources",
+            )
+        )
     missing_year = audit.entries - audit.with_year
     if missing_year:
         findings.append(
@@ -191,6 +203,8 @@ def _dimension_references(audit: ReferenceAudit | None) -> Dimension:
         else 1.0
     )
     score = 0.5 * recent_part + 0.5 * primary_part
+    if policy.min_entries:
+        score *= 0.8 + 0.2 * min(1.0, audit.entries / policy.min_entries)
     retracted = sum(1 for _, _, nature in audit.retracted if "retract" in nature.lower())
     if retracted:
         score *= 0.5

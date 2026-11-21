@@ -20,6 +20,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from .thesis_extras import (
+    check_abstracts,
+    check_citation_style,
+    check_floats,
+    list_items,
+    trace_research_questions,
+)
 from .thesis_profiles import PROFILES, ThesisProfile, detect_thesis_profiles, thesis_profile
 
 DOCUMENT_KINDS = ("article", "thesis")
@@ -395,6 +402,11 @@ class ThesisCheck:
     words: int = 0
     word_range: tuple[int, int] | None = None
     issues: tuple[ThesisIssue, ...] = ()
+    # Each research question followed to the method, results and conclusion.
+    trace: tuple[Mapping[str, Any], ...] = ()
+    abstracts: Mapping[str, Any] = field(default_factory=dict)
+    floats: Mapping[str, Any] = field(default_factory=dict)
+    citations: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def front_matter_missing(self) -> tuple[str, ...]:
@@ -420,6 +432,10 @@ class ThesisCheck:
             "layout_mismatches": [dict(item) for item in self.layout],
             "words": self.words,
             "word_range": list(self.word_range) if self.word_range else None,
+            "trace": [dict(row) for row in self.trace],
+            "abstracts": dict(self.abstracts),
+            "floats": dict(self.floats),
+            "citations": dict(self.citations),
             "issues": [issue.to_dict() for issue in self.issues],
         }
 
@@ -499,6 +515,7 @@ def check_thesis(
                            if not re.search(r"abstra|intisari", title, re.IGNORECASE))
     elements: dict[str, bool] = {}
     research_questions = objectives = conclusion_points = 0
+    questions: list[str] = []
     first = _chapter_one(chapters)
     if first:
         subs = _subheading_bodies(first[1])
@@ -507,6 +524,7 @@ def check_thesis(
         for title, body in subs:
             if re.search(CHAPTER_ONE_ELEMENTS["problem_statement"], title, re.IGNORECASE):
                 research_questions += _count_items(body)
+                questions.extend(list_items(body))
             elif re.search(CHAPTER_ONE_ELEMENTS["objectives"], title, re.IGNORECASE):
                 objectives += _count_items(body)
         for name in REQUIRED_CHAPTER_ONE:
@@ -537,6 +555,21 @@ def check_thesis(
                      f"{research_questions} research questions"),
             remedy="answer every research question in the conclusion, one point each",
         ))
+
+    trace: list[dict[str, Any]] = []
+    if questions:
+        trace, found = trace_research_questions(text, questions, stage=resolved_stage)
+        issues.extend(ThesisIssue("trace", sev, msg, fix) for sev, msg, fix in found)
+    abstracts: dict[str, Any] = {}
+    if not proposal:
+        abstracts, found = check_abstracts(
+            text, layout=resolved.abstract_layout if resolved else "", indonesian=indonesian
+        )
+        issues.extend(ThesisIssue("abstract", sev, msg, fix) for sev, msg, fix in found)
+    floats, found = check_floats(text)
+    issues.extend(ThesisIssue("floats", sev, msg, fix) for sev, msg, fix in found)
+    citations, found = check_citation_style(text, expected=resolved.citation_style if resolved else "")
+    issues.extend(ThesisIssue("citations", sev, msg, fix) for sev, msg, fix in found)
 
     layout: list[dict[str, Any]] = check_layout(text, resolved) if resolved else []
     for item in layout:
@@ -571,6 +604,10 @@ def check_thesis(
         words=words,
         word_range=word_range,
         issues=tuple(issues),
+        trace=tuple(trace),
+        abstracts=abstracts,
+        floats=floats,
+        citations=citations,
     )
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from ..claim_ledger import ClaimLedger
 from ..corpus_binder import CorpusBinding
@@ -13,6 +14,7 @@ from ..reporting_checks import (
     DeclarationCheck,
     FlowCheck,
     ReferenceAudit,
+    ReferencePolicy,
     resolve_paper_type,
     resolve_research_design,
 )
@@ -20,6 +22,8 @@ from ..thesis_checks import ThesisCheck, check_thesis, resolve_document_kind
 from ._base import (
     _REFERENCE_ITEM_RE,
     DEFAULT_WEIGHTS,
+    Dimension,
+    Finding,
     QualityError,
     QualityReport,
     _grade,
@@ -73,6 +77,48 @@ def _reference_keys(
             if key not in keys:
                 keys.append(key)
     return keys
+
+
+def thesis_reference_policy(thesis: ThesisCheck | None) -> ReferencePolicy | None:
+    """The reference policy the thesis profile sets, if it sets one."""
+
+    from ..thesis_profiles import PROFILES
+
+    if thesis is None or not thesis.profile_id:
+        return None
+    profile = next((p for p in PROFILES if p.profile_id == thesis.profile_id), None)
+    if profile is None or not profile.reference_policy:
+        return None
+    return ReferencePolicy.from_payload(profile.reference_policy)
+
+
+def _with_thesis_issues(dimension: Dimension, thesis: ThesisCheck | None, check: str) -> Dimension:
+    """``dimension`` with the thesis findings of kind ``check`` added.
+
+    Each warning costs 5% of the dimension score, down to 80%; advice is free.
+    """
+
+    if thesis is None:
+        return dimension
+    issues = [issue for issue in thesis.issues if issue.check == check]
+    if not issues:
+        return dimension
+    warnings = sum(1 for issue in issues if issue.severity != "info")
+    extra = tuple(
+        Finding(dimension=dimension.name, severity=issue.severity,
+                message=issue.message, remedy=issue.remedy)
+        for issue in issues
+    )
+    measurements = dict(dimension.measurements)
+    measurements["thesis_" + check] = (
+        dict(thesis.citations) if check == "citations" else dict(thesis.floats)
+    )
+    return replace(
+        dimension,
+        score=dimension.score * max(0.8, 1 - 0.05 * warnings),
+        measurements=measurements,
+        findings=dimension.findings + extra,
+    )
 
 
 def score_manuscript(
@@ -188,7 +234,11 @@ def score_manuscript(
         from ..reporting_checks import audit_references, cited_keys
 
         cited = cited_keys(text)
-        reference_audit = audit_references(parse_bib_entries(bibliography_text), cited_keys=cited)
+        reference_audit = audit_references(
+            parse_bib_entries(bibliography_text),
+            cited_keys=cited,
+            policy=thesis_reference_policy(thesis) if is_thesis else None,
+        )
 
     dimensions = (
         _dimension_structure(
@@ -214,9 +264,11 @@ def score_manuscript(
         _dimension_thesis_statements(thesis, declarations)
         if is_thesis and thesis is not None
         else _dimension_declarations(declarations),
-        _dimension_references(reference_audit),
+        _with_thesis_issues(_dimension_references(reference_audit), thesis, "citations"),
         _dimension_prose_style(text, allow_em_dash=allow_em_dash),
-        _dimension_tables_figures(text, asset_root=asset_root),
+        _with_thesis_issues(
+            _dimension_tables_figures(text, asset_root=asset_root), thesis, "floats"
+        ),
         _dimension_readability(text),
         _dimension_formulaic_prose(text),
     )
