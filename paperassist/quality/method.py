@@ -112,9 +112,15 @@ def _dimension_method(
     """
 
     if design is None:
-        design = DESIGNS["systematic_review" if paper_type == "review" else "empirical"]
+        design = DESIGNS[
+            {"review": "systematic_review", "conceptual": "position_paper"}.get(paper_type, "empirical")
+        ]
     bodies = _section_bodies(text)
     method = bodies.get("method", "")
+    if design.family == "conceptual":
+        # An essay or editorial has no Method section; its argument is the text.
+        method = text
+        bodies = {**bodies, "results": text}
     lowered = _strip_latex(method).lower()
     findings: list[Finding] = []
     base: dict[str, Any] = {

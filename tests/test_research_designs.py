@@ -8,6 +8,7 @@ import pytest
 from paperassist.manuscript_quality import score_manuscript
 from paperassist.reporting_checks import resolve_paper_type, resolve_research_design
 from paperassist.research_designs import (
+    DESIGN_FAMILIES,
     DESIGNS,
     RESEARCH_DESIGNS,
     STATISTICS_SIGNALS,
@@ -21,7 +22,7 @@ from paperassist.research_designs import (
 def test_registry_is_well_formed():
     assert len(DESIGNS) >= 20
     for design in DESIGNS.values():
-        assert design.family in ("review", "empirical")
+        assert design.family in DESIGN_FAMILIES
         assert design.guideline and design.reference
         assert design.method_signals, design.key
         if design.parent is not None:

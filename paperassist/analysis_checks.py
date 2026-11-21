@@ -39,13 +39,19 @@ _CATEGORY = {
     "low": "low",
 }
 
-_NGAIN_RE = re.compile(r"n[- ]?gain|normali[sz]ed gain|gain ternormalisasi", re.IGNORECASE)
+# Word-bounded: "domain gain" or "can gain" is not an N-gain.
+_NGAIN_RE = re.compile(r"\bn[- ]?gain\b|normali[sz]ed gain|gain ternormalisasi", re.IGNORECASE)
 _VALUE_CATEGORY_RE = re.compile(
     r"(?<![\d.,])(\d{1,3}(?:[.,]\d+)?)\s*(%|persen|percent)?"
     r"[^.\d;]{0,40}?\b(tinggi|sedang|rendah|high|medium|moderate|low)\b",
     re.IGNORECASE,
 )
-_AIKEN_RE = re.compile(r"aiken", re.IGNORECASE)
+# The coefficient, not any author named Aiken in the reference list.
+_AIKEN_RE = re.compile(
+    r"aiken[’'`]?s?\s*v\b|indeks\s+(?:validitas\s+)?aiken|aiken[’'`]?s?\s+index"
+    r"|(?:validitas isi|content validity)[^.]{0,80}aiken",
+    re.IGNORECASE,
+)
 # Authors type "Aiken's", "Aiken’s" (curly apostrophe) or "Aiken"; values come
 # singly ("V = 0,86") or as a range ("berkisar antara 0,64 hingga 0,73").
 _AIKEN_VALUE_RE = re.compile(
@@ -85,7 +91,8 @@ _NORMALITY_RE = re.compile(
     re.IGNORECASE,
 )
 _HOMOGENEITY_RE = re.compile(
-    r"homogen|levene|bartlett|brown[- ]forsythe|welch|equal variances?|kesamaan varians",
+    r"homogen|levene|bartlett|brown[- ]forsythe|welch|equal variances?|kesamaan varians"
+    r"|homosc?edastic|homosk?edastic|heterosc?edastic",
     re.IGNORECASE,
 )
 

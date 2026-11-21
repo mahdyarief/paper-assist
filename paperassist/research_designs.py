@@ -38,7 +38,7 @@ from typing import Any
 
 Signal = tuple[str, str]
 
-DESIGN_FAMILIES = ("review", "empirical")
+DESIGN_FAMILIES = ("review", "empirical", "conceptual")
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,12 @@ class ResearchDesign:
     aliases: tuple[str, ...] = ()
     min_hits: int = 1
     weak_detect: str = ""
+    # Designs this one replaces when it is named at least twice (see
+    # ``detect_research_design``).
+    outranks: tuple[str, ...] = ()
+    # A pattern that, found in the title block, adds two hits when the design
+    # is named at least once (a "...Bench" or "...Benchmark" title).
+    title_boost: str = ""
     notes: str = ""
     url: str = ""
     method_outline: tuple[str, ...] = ()
@@ -80,6 +86,30 @@ class ResearchDesign:
             "method_outline": list(self.method_outline),
             "notes": self.notes,
         }
+
+
+# Computer-science literature surveys ("RAG for LLMs: A Survey", "In this
+# survey, we review ...") are reviews, not questionnaire studies.
+LITERATURE_SURVEY_RE = re.compile(
+    r"literature survey"
+    # Not "brief survey": papers open background sections with one.
+    r"|(?:comprehensive|systematic|critical|analytical|thorough|extensive) survey\b"
+    r"|[:—–]\s*a\s+(?:\w+\s+)?survey\b"
+    r"|\b(?:this|our) survey,?\s+(?:\w+ly\s+)?(?:reviews|examines|covers|summari[sz]es"
+    r"|categori[sz]es|explores|surveys|presents|provides|argues|endeavou?rs|maps|traces"
+    r"|aims\s+to\s+(?:provide|review|summari[sz]e|give|present|offer))\b"
+    r"|\bin this survey,?\s+we\b"
+    # A title line "A survey of automated ICD coding" (optionally after the
+    # journal's "Review" label); questionnaire titles are screened out by the
+    # respondent check in family detection.
+    r"|^[ \t]*(?:review[ \t]+)?a[ \t]+(?:[\w-]+[ \t]+)?survey[ \t]+(?:of|on)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+# How far into the text an article-type label ("RESEARCH ESSAY", "Guest
+# Editorial", "Position paper") counts: the title block and abstract.
+ARTICLE_TYPE_WINDOW = 3000
+# The title block: journal header lines plus the title itself.
+TITLE_WINDOW = 600
 
 
 # --------------------------------------------------------------------------
@@ -308,6 +338,7 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         url="https://www.equator-network.org/reporting-guidelines/prisma-scr/",
         aliases=("scoping", "scoping-review", "evidence map"),
         detect=r"scoping review|scoping study|tinjauan (?:cakupan|pelingkupan)|kajian pelingkupan|evidence map|prisma-scr",
+        outranks=("systematic_review",),
         method_signals=(
             (
                 "review framework",
@@ -349,6 +380,7 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         url="https://www.equator-network.org/reporting-guidelines/preliminary-guideline-for-reporting-bibliometric-reviews-of-the-biomedical-literature-biblio-a-minimum-requirements/",
         aliases=("bibliometrics", "bibliometrik", "scientometric", "bibliometric-analysis"),
         detect=r"bibliometri|scientometri|saintometri|vosviewer|bibliometrix|biblioshiny|citespace|science mapping",
+        outranks=("systematic_review",),
         method_signals=(
             ("data source", r"scopus|web of science|\bwos\b|dimensions|openalex|lens\.org|pubmed|google scholar|garuda"),
             _SEARCH,
@@ -395,7 +427,11 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         reference="Baethge C, Goldbeck-Wood S, Mertens S. Res Integr Peer Rev 2019;4:5",
         url="https://researchintegrityjournal.biomedcentral.com/articles/10.1186/s41073-019-0064-8",
         aliases=("narrative", "literature-review", "integrative review", "state of the art"),
-        detect=r"narrative review|integrative review|kajian naratif|tinjauan naratif|state[- ]of[- ]the[- ]art review",
+        detect=(
+            r"(?m)narrative review|integrative review|kajian naratif|tinjauan naratif"
+            r"|state[- ]of[- ]the[- ]art review|curated review|"
+            + LITERATURE_SURVEY_RE.pattern
+        ),
         method_signals=(
             ("justification of importance", r"importan|penting|relevan|gap|celah|motivat"),
             ("aims or questions", r"\baim|objective|tujuan|research question|pertanyaan penelitian"),
@@ -630,7 +666,7 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         reference="O'Brien BC et al. Acad Med 2014;89:1245-1251; Tong A et al. Int J Qual Health Care 2007;19:349-357",
         url="https://www.equator-network.org/reporting-guidelines/srqr/",
         aliases=("kualitatif", "interview", "phenomenology", "fenomenologi", "grounded-theory", "ethnography"),
-        detect=r"qualitative|kualitatif|phenomenolog|fenomenolog|grounded theory|thematic analysis|analisis tematik|ethnograph|etnograf|semi-?structured interview|wawancara (?:mendalam|semi)|in-?depth interview|focus group|\bfgd\b",
+        detect=r"qualitative(?!ly)|kualitatif|phenomenolog|fenomenolog|grounded theory|thematic analysis|analisis tematik|ethnograph|etnograf|semi-?structured interview|wawancara (?:mendalam|semi)|in-?depth interview|focus group|\bfgd\b",
         method_signals=(
             ("qualitative approach and paradigm", r"phenomenolog|fenomenolog|grounded theory|ethnograph|etnograf|narrative|naratif|interpretiv|constructiv|konstruktiv|paradigm|descriptive qualitative|kualitatif deskriptif"),
             ("researcher reflexivity", r"reflexiv|refleksivitas|positionality|posisi peneliti|researcher'?s? role|peran peneliti|peneliti sebagai instrumen"),
@@ -768,7 +804,8 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
         guideline="Kemmis & McTaggart cycle (plan, act and observe, reflect)",
         reference="Kemmis S, McTaggart R. The Action Research Planner, 1988; Arikunto S. Penelitian Tindakan Kelas",
         aliases=("ptk", "penelitian tindakan kelas", "classroom-action-research", "car"),
-        detect=r"penelitian tindakan kelas|\bptk\b|classroom action research",
+        # Not the "PTK" in student numbers such as 23/525636/PTK/15370.
+        detect=r"penelitian tindakan kelas|(?<![/\w])ptk(?![/\w])|classroom action research",
         method_signals=(
             ("subjects and setting", r"subjek penelitian|subject|siswa|peserta didik|students|kelas [ivx\d]+|lokasi|sekolah"),
             ("cycle model", r"siklus|cycle|kemmis|mc ?taggart|arikunto|elliott|kurt lewin"),
@@ -809,6 +846,147 @@ _DESIGNS: tuple[ResearchDesign, ...] = (
             ("outcomes per cycle", r"cycle|siklus|iteration|iterasi"),
             ("change achieved", r"improv|peningkatan|change|perubahan"),
         ),
+    ),
+    # ---------------------------------------------- artefacts and benchmarks
+    ResearchDesign(
+        key="dataset_benchmark",
+        label="Dataset or benchmark paper",
+        family="empirical",
+        category="quantitative",
+        guideline="Datasheets for Datasets; NeurIPS Datasets and Benchmarks track",
+        reference="Gebru T et al. Datasheets for Datasets. Commun ACM 2021;64(12):86-92",
+        url="https://arxiv.org/abs/1803.09010",
+        aliases=("dataset", "benchmark", "corpus", "dataset-paper"),
+        # Releasing a resource, not using one: "we introduce a new dataset",
+        # "we propose T2ER, a benchmark", not "the MIMIC benchmark dataset" or
+        # "codes present in the dataset".
+        detect=(
+            r"(?:introduce|present|release|construct|build|propose|curate|create)s?\s+"
+            r"(?:a|an|our)\s+(?:new\s+|novel\s+|first\s+|large-scale\s+|public\s+|open(?:-source)?\s+)*"
+            r"(?:[\w+-]+\s+){0,3}(?:benchmark|dataset|corpus|test suite|test-?bed)\b"
+            r"|(?:introduce|propose|present|release)s?\s+[\w+-]+,\s+(?:a|an|the\s+first)\s+"
+            r"(?:[\w,-]+\s+){0,5}(?:benchmark|dataset|corpus|test-?bed)\b"
+            r"|\bdatasheet\b"
+        ),
+        title_boost=r"bench(?:mark)?|dataset|corpus|test-?bed",
+        # A benchmark paper also trains baselines; named twice (or once with
+        # a benchmark title) it is the benchmark.
+        outranks=("ml_experiment",),
+        method_signals=(
+            ("motivation and gap the dataset fills", r"motivat|gap|lack|no (?:existing|public)|limited|kurang"),
+            ("data source and collection", r"collect|source|crawl|scrap|sampled|obtained from|dikumpulkan|sumber data"),
+            ("annotation or labelling procedure", r"annotat|label|anotasi|pelabelan|guideline"),
+            ("annotator agreement", r"agreement|kappa|krippendorff|inter-?annotator|inter-?rater"),
+            ("splits and statistics", r"split|train|test set|validation set|statistic|distribution"),
+            ("licence and access", r"licen[cs]e|cc-by|cc by|terms of use|access|lisensi"),
+            ("intended uses and limitations", r"intended use|limitation|bias|misuse|keterbatasan"),
+            ("baseline evaluation", r"baseline|we evaluate|evaluation|benchmark"),
+        ),
+        repro_signals=(
+            ("dataset available", r"huggingface|zenodo|github\.com|figshare|kaggle|physionet|available at|tersedia di"),
+            _CODE_AVAILABLE,
+            ("datasheet or documentation", r"datasheet|data card|dataset card|documentation|dokumentasi"),
+        ),
+        results_signals=(
+            ("baseline results", r"baseline|accuracy|f1|auc|score|akurasi"),
+            ("dataset statistics", r"statistic|distribution|number of|jumlah|average length"),
+        ),
+        notes="Benchmarks that only report model scores are judged as ML experiments.",
+    ),
+    ResearchDesign(
+        key="engineering_research",
+        label="Engineering research (system, tool or architecture)",
+        family="empirical",
+        category="design and development",
+        guideline="ACM SIGSOFT Empirical Standards: Engineering Research",
+        reference="Ralph P et al. ACM SIGSOFT Empirical Standards, arXiv:2010.03525",
+        url="https://www2.sigsoft.org/EmpiricalStandards/",
+        aliases=("engineering", "system-paper", "tool-paper", "architecture", "sistem"),
+        detect=(
+            r"decision support system|sistem pendukung keputusan|reference architecture"
+            r"|system architecture|arsitektur sistem|we (?:design|develop|build|implement|present)\s+"
+            r"(?:a|an)\s+(?:[\w+-]+\s+){0,3}(?:system|tool|platform|infrastructure|architecture|prototype)\b"
+        ),
+        min_hits=2,
+        method_signals=(
+            ("problem and motivation", r"problem|challenge|motivat|masalah"),
+            ("artefact description", r"system|tool|platform|architecture|component|module|sistem|komponen"),
+            ("design rationale", r"design decision|rationale|we chose|trade-?off|alasan|requirement|kebutuhan"),
+            ("comparison with the state of the art", r"state[- ]of[- ]the[- ]art|existing (?:systems|tools|approaches)|compared|baseline|related work"),
+            ("evaluation", r"evaluat|experiment|case study|user study|benchmark|evaluasi|pengujian"),
+            ("limitations and threats", r"limitation|threat|keterbatasan|drawback"),
+        ),
+        repro_signals=(_CODE_AVAILABLE, ("artefact specification", r"diagram|figure|specification|spesifikasi|pseudocode|algorithm")),
+        results_signals=(
+            ("evaluation results", r"result|hasil|performance|accuracy|latency|throughput|score"),
+            ("comparison results", r"compared|outperform|baseline|than|dibanding"),
+        ),
+    ),
+    # ------------------------------------------------------------ conceptual
+    # Non-empirical papers, after Wieringa et al. (2006): philosophical papers
+    # (a new method, framework or taxonomy) and opinion papers. Neither has a
+    # Method section, so their items are looked for across the whole text, and
+    # they are detected from the article-type label in the opening only.
+    ResearchDesign(
+        key="methodological_paper",
+        label="Methodological or framework paper",
+        family="conceptual",
+        category="conceptual",
+        guideline=(
+            "No consensus reporting guideline; Wieringa et al. criteria for philosophical "
+            "papers; MISTIC (in development) for methodological studies in health research"
+        ),
+        reference=(
+            "Wieringa R, Maiden N, Mead N, Rolland C. Requirements Eng 2006;11:102-107; "
+            "Lawson DO et al. BMJ Open 2020;10:e040478"
+        ),
+        url="https://doi.org/10.1007/s00766-005-0021-6",
+        aliases=("methodological", "method-paper", "framework-paper", "research-essay", "guide", "metodologis"),
+        detect=(
+            r"research essay|methodological (?:paper|article|note|contribution|guidance)"
+            r"|(?:a|this)\s+(?:practical\s+)?guide\s+(?:to|for)\s+(?:conducting|writing|doing|carrying out|choosing)"
+            # Not "research framework": empirical papers "present a research
+            # framework" and then test it.
+            r"|(?:develops?|proposes?|presents?|introduces?)\s+(?:a|an)\s+(?:[\w-]+\s+){0,3}research\s+"
+            r"(?:methodology|method|process(?: model)?|guidelines?)\b"
+            r"|choosing\s+an?\s+(?:[\w-]+\s+){0,3}research\s+methodology"
+        ),
+        method_signals=(
+            ("problem or gap in existing methods", r"gap|lack|problem|shortcoming|limitation|challenge|celah|kekurangan"),
+            ("grounding in prior literature", r"et al|literature|\(\d{4}\)|\[\d+\]|pustaka"),
+            ("the proposed method, framework or taxonomy", r"framework|methodology|guideline|process model|taxonomy|steps|stages|kerangka|tahap"),
+            ("illustration or application", r"illustrat|example|case|demonstrat|application|contoh|ilustrasi"),
+            ("evaluation or justification", r"evaluat|validat|justif|assess|compar|evaluasi"),
+            ("scope and limitations", r"limitation|scope|boundar|keterbatasan|batasan"),
+        ),
+        results_signals=(
+            ("implications or guidance for researchers", r"implication|recommend|guidance|should|implikasi|rekomendasi"),
+        ),
+        notes="Detected from the article-type label or self-description in the opening.",
+    ),
+    ResearchDesign(
+        key="position_paper",
+        label="Position paper, editorial, commentary or perspective",
+        family="conceptual",
+        category="conceptual",
+        guideline="No reporting guideline; Wieringa et al. criteria for opinion papers",
+        reference="Wieringa R, Maiden N, Mead N, Rolland C. Requirements Eng 2006;11:102-107",
+        url="https://doi.org/10.1007/s00766-005-0021-6",
+        aliases=("position", "editorial", "commentary", "perspective", "opinion", "viewpoint", "opini"),
+        # Labels, not words: "from the viewpoint of" or "editorial board" in a
+        # journal header must not make a research article an opinion piece.
+        detect=(
+            r"(?m)guest editorial|^[ \t]*editorial\b(?!\s+(?:board|office|team|policy|policies|process|manager|staff))"
+            r"|(?:this|in this|our) (?:editorial|commentary|perspective|viewpoint|position paper)\b"
+            r"|position paper|perspective article|viewpoint article|opinion paper|^[ \t]*commentary[ \t]*$"
+        ),
+        method_signals=(
+            ("the position or thesis", r"argue|contend|position|we posit|we propose that|claim|berpendapat|argumen"),
+            ("supporting evidence", r"et al|evidence|stud(?:y|ies)|data|\[\d+\]|bukti"),
+            ("counterarguments considered", r"however|although|critics|counter|on the other hand|namun|meskipun"),
+            ("implications or call to action", r"implication|recommend|call for|should|next steps|implikasi|rekomendasi"),
+        ),
+        notes="Detected from the article-type label in the opening.",
     ),
 )
 
@@ -860,6 +1038,16 @@ _METHOD_OUTLINES: dict[str, tuple[str, ...]] = {
                                   "Success indicators", "Instruments and data analysis"),
     "action_research": ("Context and partners", "Cycle structure", "Data collection",
                         "Reflection"),
+    "dataset_benchmark": ("Motivation", "Data sources and collection", "Annotation",
+                          "Quality control and agreement", "Splits and statistics",
+                          "Licence, access and intended use", "Baselines"),
+    "engineering_research": ("Problem and requirements", "Design and architecture",
+                             "Implementation", "Evaluation", "Comparison with existing systems"),
+    "methodological_paper": ("Problem with current practice", "Foundations",
+                             "The proposed method or framework", "Illustration or application",
+                             "Evaluation or justification", "Scope and limitations"),
+    "position_paper": ("The position", "Background", "Arguments and evidence",
+                       "Counterarguments", "Implications"),
 }
 _DESIGNS = tuple(
     replace(design, method_outline=_METHOD_OUTLINES.get(design.key, design.method_outline))
@@ -871,6 +1059,11 @@ RESEARCH_DESIGNS: tuple[str, ...] = tuple(DESIGNS)
 
 _REVIEW_FAMILY_DEFAULT = "systematic_review"
 _EMPIRICAL_FAMILY_DEFAULT = "empirical"
+_FAMILY_DEFAULTS = {
+    "review": _REVIEW_FAMILY_DEFAULT,
+    "empirical": _EMPIRICAL_FAMILY_DEFAULT,
+    "conceptual": "position_paper",
+}
 
 
 def _alias_table() -> dict[str, str]:
@@ -904,8 +1097,51 @@ _GUIDELINE_EXPANSIONS = re.compile(
 )
 
 
-def _detection_text(text: str) -> str:
-    return _GUIDELINE_EXPANSIONS.sub(" ", text[:20000])
+# Mentions that deny a design are not evidence for it ("a meta-analysis was not
+# conducted", "Synthesis Without Meta-analysis", "rather than an exhaustive
+# systematic review").
+_NEGATED_MENTIONS = re.compile(
+    r"(?:synthesis\s+)?without\s+meta-?analy\w*"
+    r"|meta-?analy\w*\s+(?:was|were|could|is)\s+not\s+(?:be\s+)?"
+    r"(?:conducted|performed|feasible|possible|undertaken|done|appropriate)"
+    r"|(?:\bno|not\s+(?:conduct|perform)(?:ed)?\s+a|did\s+not\s+(?:conduct|perform)\s+a)\s+meta-?analy\w*"
+    r"|rather\s+than\s+(?:an?\s+)?(?:\w+\s+)?systematic\s+(?:literature\s+)?review"
+    r"|not\s+(?:meant\s+to\s+be\s+|intended\s+(?:to\s+be\s+|as\s+))?an?\s+(?:\w+\s+)?"
+    r"systematic\s+(?:literature\s+)?(?:review|survey)"
+    r"|tidak\s+dilakukan\s+meta-?analisis|meta-?analisis\s+tidak\s+dilakukan"
+    # Sugiyono's textbook "Metode Penelitian Kuantitatif, Kualitatif, dan R&D",
+    # cited in most Indonesian theses, is not an R&D design.
+    r"|kualitatif,?\s+(?:dan|and)\s+r\s*&\s*d\b"
+    # Other people's reviews: "a 2025 systematic review by du Preez et al.",
+    # "recent systematic review evidence", "previous scoping reviews".
+    r"|(?:previous|prior|earlier|existing|recent|another|other|several|many|past)\s+"
+    r"(?:\w+\s+){0,2}(?:systematic|scoping|literature|narrative)\s+(?:literature\s+)?reviews?"
+    r"|(?:systematic|scoping|narrative)\s+(?:literature\s+)?reviews?\s+(?:by|from)\s+\w+",
+    re.IGNORECASE,
+)
+# The reference list names other people's designs ("Systematic review of
+# discharge coding accuracy"); detection stops at the last references heading.
+_REFERENCES_HEADING = re.compile(
+    r"^[ \t]*(?:[IVX\d]+\.?[ \t]*)?(?:references|bibliography|daftar pustaka|referensi"
+    r"|literature cited|works cited)[ \t]*$"
+    r"|\\begin\{thebibliography\}|\\bibliography\{|\\printbibliography",
+    re.IGNORECASE | re.MULTILINE,
+)
+def detection_text(text: str) -> str:
+    """The text design and family detection read: the body before the
+    reference list, at most 20,000 characters, with spelled-out guideline names
+    and denied designs removed."""
+
+    headings = list(_REFERENCES_HEADING.finditer(text))
+    # The last heading, so a thesis table of contents listing "Daftar Pustaka"
+    # does not cut the whole thesis; only when it sits past the opening.
+    if headings and headings[-1].start() > len(text) * 0.3:
+        text = text[: headings[-1].start()]
+    head = _GUIDELINE_EXPANSIONS.sub(" ", text[:20000])
+    return _NEGATED_MENTIONS.sub(" ", head)
+
+
+_detection_text = detection_text
 
 
 def _matches(design: ResearchDesign, head: str) -> tuple[list[str], list[str]]:
@@ -935,9 +1171,34 @@ def _counted_hits(head: str) -> tuple[dict[str, int], dict[str, tuple[list[str],
             key != design.key and DESIGNS[key].family == design.family for key in strong_named
         )
         count = len(strong) + (0 if rivals else len(weak))
+        if count and design.title_boost and re.search(
+            design.title_boost, head[:TITLE_WINDOW], re.IGNORECASE
+        ):
+            count += 2
         if count and count >= design.min_hits:
             hits[design.key] = count
     return hits, matches
+
+
+def article_type_label(text: str) -> str | None:
+    """The conceptual design an article-type label in the opening names, if any.
+
+    Methodological essays and editorials are not studies, and their bodies
+    discuss the designs they are about (an essay on design science names DSR
+    on every page), so only a label or self-description near the title counts.
+    """
+
+    head = detection_text(text)[:ARTICLE_TYPE_WINDOW]
+    found = {
+        design.key: len(re.findall(design.detect, head, re.IGNORECASE))
+        for design in _DESIGNS
+        if design.family == "conceptual" and design.detect
+    }
+    found = {key: count for key, count in found.items() if count}
+    if not found:
+        return None
+    order = {key: index for index, key in enumerate(RESEARCH_DESIGNS)}
+    return min(found, key=lambda key: (-found[key], order[key]))
 
 
 def design_hits(text: str) -> dict[str, int]:
@@ -955,11 +1216,19 @@ def detect_research_design(text: str, *, family: str) -> str:
     the more specific designs first.
     """
 
+    if family == "conceptual":
+        return article_type_label(text) or _FAMILY_DEFAULTS["conceptual"]
     hits = {
         key: count for key, count in design_hits(text).items() if DESIGNS[key].family == family
     }
     if not hits:
-        return _REVIEW_FAMILY_DEFAULT if family == "review" else _EMPIRICAL_FAMILY_DEFAULT
+        return _FAMILY_DEFAULTS.get(family, _EMPIRICAL_FAMILY_DEFAULT)
+    # A scoping review or bibliometric analysis that selects its records with
+    # PRISMA is not thereby a systematic review: named twice, it outranks one.
+    for key in list(hits):
+        if hits[key] >= 2:
+            for beaten in DESIGNS[key].outranks:
+                hits.pop(beaten, None)
     order = {key: index for index, key in enumerate(RESEARCH_DESIGNS)}
     children = [key for key in hits if DESIGNS[key].parent in hits]
     if children:
@@ -1008,7 +1277,9 @@ def explain_detection(text: str, *, family: str) -> dict[str, Any]:
     rivals = [
         item["hits"]
         for item in counted
-        if item["key"] != chosen and DESIGNS[chosen].parent != item["key"]
+        if item["key"] != chosen
+        and DESIGNS[chosen].parent != item["key"]
+        and item["key"] not in DESIGNS[chosen].outranks
     ]
     if not chosen_hits:
         confidence = "low"
@@ -1079,5 +1350,8 @@ __all__ = [
     "design_method_brief",
     "detect_research_design",
     "explain_detection",
+    "article_type_label",
+    "detection_text",
+    "LITERATURE_SURVEY_RE",
     "get_design",
 ]

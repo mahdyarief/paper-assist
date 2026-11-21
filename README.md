@@ -382,6 +382,10 @@ terdeteksi. Bila tebakan salah, set `research_design` secara eksplisit.
 | design and development | `research_development` | Research and development (R&D) of a product | R&D models: Borg & Gall (10 steps), ADDIE (5 phases), 4D (Thiagarajan), Plomp |
 | action research | `classroom_action_research` (turunan `action_research`) | Classroom action research (PTK) | Kemmis & McTaggart cycle (plan, act and observe, reflect) |
 | action research | `action_research` | Action research | Action research cycle; ACM SIGSOFT Action Research standard |
+| quantitative | `dataset_benchmark` | Dataset or benchmark paper | Datasheets for Datasets; NeurIPS Datasets and Benchmarks track |
+| design and development | `engineering_research` | Engineering research (system, tool or architecture) | ACM SIGSOFT Empirical Standards: Engineering Research |
+| conceptual | `methodological_paper` | Methodological or framework paper | Belum ada pedoman konsensus; kriteria *philosophical paper* Wieringa et al. (2006); MISTIC (dalam pengembangan) |
+| conceptual | `position_paper` | Position paper, editorial, commentary or perspective | Belum ada pedoman; kriteria *opinion paper* Wieringa et al. (2006) |
 
 Sinyal ini heuristik teks: menunjukkan apakah sebuah item *disebut*, bukan
 apakah dikerjakan dengan baik, dan hanya mencakup item yang bisa terlihat dari
@@ -391,6 +395,18 @@ naskah. `writing_pack` menerima `research_design` dan menambahkan item pedoman
 itu ke brief section Method, beserta urutan subbab Method yang disarankan;
 kerangka naskah (paper maupun tesis) memuat urutan itu sebagai komentar di bawah
 bagian Metode.
+
+**Paper non-empiris.** Esai metodologi, panduan, editorial, dan position paper
+masuk keluarga ketiga, `conceptual` (mengikuti klasifikasi Wieringa et al.
+2006: *philosophical* dan *opinion papers*). Keluarga ini dikenali dari label
+jenis artikel di bagian awal naskah ("RESEARCH ESSAY", "Guest Editorial", "A
+Guide to Conducting...", "This paper develops a ... research methodology"),
+bukan dari isi naskah, karena esai tentang design science menyebut DSR di setiap
+halaman. Paper konseptual dinilai pada seluruh teks karena tidak punya bagian
+Metode, dan tidak diminta etika atau ketersediaan kode. Paper dataset/benchmark
+dikenali dari frasa merilis sumber data ("we introduce X, a benchmark for...")
+dan judul yang memuat "Bench"/"benchmark"/"dataset"; frasa memakai dataset
+("the MIMIC benchmark dataset") tidak dihitung.
 
 **Mengecek tebakan desain.** Deteksi `auto` dicatat di `reporting-checks.json`
 (`design_detection`) dan di `design_lookup`: kandidat, jumlah sebutan, frasa
@@ -426,9 +442,19 @@ kuantitatif, campuran, R&D, dan penelitian tindakan:
   homogenitas (Levene, Bartlett) atau uji Welch juga ditandai.
 
 **Kalibrasi.** Deteksi desain dan pemeriksaan analisis diuji pada 11 artikel dan
-bab metode open-access (PTK, R&D/ADDIE, kuasi-eksperimen, SLR, kualitatif,
-eksperimen ML). Kalibrasi ini memperbaiki tiga salah baca (SLR terbaca
-meta-analisis, R&D terbaca survei, apostrof melengkung pada "Aiken’s V").
+bab metode open-access berbahasa Indonesia (PTK, R&D/ADDIE, kuasi-eksperimen,
+SLR, kualitatif) dan 233 paper referensi sebuah tesis (eksperimen ML/LLM,
+koding ICD, deteksi fraud klaim, survei literatur, design science, scoping
+review, benchmark, klaim BPJS). Perbaikan dari
+kalibrasi: kepanjangan PRISMA tidak dihitung sebagai meta-analisis; kata
+instrumen tidak menjadikan R&D survei; survei literatur gaya CS ("...: A
+Survey", "In this survey, we review") dikenali sebagai review; daftar pustaka
+dan kalimat penyangkalan ("a meta-analysis was not conducted", "rather than a
+systematic review") tidak dihitung; "PTK" dalam NIM dan judul buku Sugiyono
+"...Kualitatif, dan R&D" diabaikan; scoping review dan bibliometrik yang
+memakai PRISMA tidak terbaca systematic review; nama penulis "Aiken" di
+referensi tidak memicu pemeriksaan Aiken's V. Esai metodologi (Hevner,
+Peffers, Okoli) terbaca sebagai desain yang dibahasnya.
 Naskah PDF perlu dikonversi ke LaTeX dengan heading `\section` dulu, karena
 penilaian per bagian membaca struktur LaTeX.
 

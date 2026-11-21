@@ -33,14 +33,24 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .research_designs import ResearchDesign
 
-PAPER_TYPES = ("empirical", "review")
+# "conceptual" covers methodological essays, guides, editorials and position
+# papers: no data of their own, so no Method section and no ethics or code.
+PAPER_TYPES = ("empirical", "review", "conceptual")
 
 _REVIEW_RE = re.compile(
     r"systematic (?:literature )?review|scoping review|meta-analy|mapping study|"
     r"tinjauan (?:literatur(?:e)? )?sistematis|kajian (?:literatur )?sistematis|"
     r"\bslr\b|\bprisma\b|bibliometri|scientometri|vosviewer|bibliometrix|"
-    r"narrative review|integrative review",
+    # Not "critical review": empirical introductions say "a critical review of
+    # existing literature reveals ...".
+    r"narrative review|integrative review|curated review|"
+    r"state[- ]of[- ]the[- ]art review|kajian naratif|tinjauan naratif",
     re.IGNORECASE,
+)
+
+
+_QUESTIONNAIRE_RE = re.compile(
+    r"questionnaire|kuesioner|angket|respondent|responden|likert", re.IGNORECASE
 )
 
 
@@ -56,8 +66,16 @@ def detect_paper_type(text: str, *, study_count: int = 0) -> str:
 
     if study_count > 0:
         return "review"
-    head = text[:20000]
+    from .research_designs import LITERATURE_SURVEY_RE, article_type_label, detection_text
+
+    # An essay, guide or editorial says what it is near its title.
+    if article_type_label(text):
+        return "conceptual"
+    head = detection_text(text)
     mentions = len(_REVIEW_RE.findall(head))
+    # "A Survey on X" is a literature review unless the paper has respondents.
+    if len(_QUESTIONNAIRE_RE.findall(head)) < 2:
+        mentions += len(LITERATURE_SURVEY_RE.findall(head))
     if mentions >= 2:
         return "review"
     # One review marker plus eligibility criteria is a review's method.
@@ -430,7 +448,8 @@ def check_declarations(
     recommended = [
         name
         for name in RECOMMENDED_DECLARATIONS
-        if name not in needed and not (name == "code_availability" and paper_type == "review")
+        if name not in needed
+        and not (name == "code_availability" and paper_type in ("review", "conceptual"))
     ]
     return DeclarationCheck(
         required=tuple(needed),

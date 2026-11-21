@@ -184,7 +184,7 @@ def test_aiken_without_raters_or_categories_is_flagged():
         "Tiga validator menilai setiap butir pada skala Likert 1-5; Aiken's V = 0,86."
     )
     assert stated.issues == ()
-    impossible = check_analyses("Tiga validator, skala 5 kategori; nilai V sebesar 1,2 (Aiken).")
+    impossible = check_analyses("Tiga validator, skala 5 kategori; Aiken's V sebesar 1,2.")
     assert any("outside 0-1" in issue.message for issue in impossible.issues)
 
 

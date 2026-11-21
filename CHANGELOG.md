@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### Non-empirical papers, benchmarks and systems
+
+- Third design family, `conceptual`: `methodological_paper` (essays, guides,
+  research methodologies) and `position_paper` (editorials, commentaries,
+  perspectives), after Wieringa et al.'s philosophical and opinion papers.
+  Detected from the article-type label in the opening (`article_type_label`),
+  judged on the whole text, and not asked for ethics or code availability.
+- `dataset_benchmark` (Datasheets for Datasets; NeurIPS D&B) outranks
+  `ml_experiment` when a paper releases a resource; a benchmark title adds
+  weight (`ResearchDesign.title_boost`). `engineering_research` (ACM SIGSOFT
+  Engineering Research) for system and architecture papers.
+- Others' reviews ("a 2025 systematic review by du Preez", "recent
+  systematic review evidence") and "qualitatively" no longer count; "A survey
+  of ..." titles and "this survey aims to provide" mark literature surveys.
+
+### Detection calibrated on 86 thesis reference papers
+
+- Reviews: computer-science literature surveys ("...: A Survey", "In this
+  survey, we review") count as reviews unless the paper has respondents, and
+  are classed as narrative reviews; "curated review" too.
+- Detection reads the body before the reference list and drops denied designs
+  ("a meta-analysis was not conducted", "Synthesis Without Meta-analysis",
+  "rather than an exhaustive systematic review").
+- Scoping reviews and bibliometric analyses named twice outrank the systematic
+  review their PRISMA wording suggests (`ResearchDesign.outranks`).
+- "PTK" in student numbers and Sugiyono's "Kuantitatif, Kualitatif, dan R&D"
+  title are ignored.
+- Analysis checks: word-bounded N-gain, Aiken's V only for the coefficient (not
+  an author named Aiken), homoscedasticity counts as a homogeneity statement.
+
 ### Participant flow, analysis checks and design follow-ups
 
 - CONSORT 2025 and STROBE participant-flow arithmetic

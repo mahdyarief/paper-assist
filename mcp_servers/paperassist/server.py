@@ -243,7 +243,9 @@ class PaperAssistMcpServer(BasePaperAssistMcpServer):
                     "List research designs (systematic/scoping review, meta-analysis, "
                     "bibliometric, RCT, quasi-experiment, observational, survey, "
                     "diagnostic, prediction model, ML experiment, qualitative, mixed "
-                    "methods, case study, design science, R&D, action research, PTK) "
+                    "methods, case study, design science, R&D, action research, PTK, "
+                    "dataset/benchmark, engineering research, methodological and "
+                    "position papers) "
                     "with their reporting guideline and checked items; look one up by "
                     "key or alias, or detect it from a manuscript."
                 ),
