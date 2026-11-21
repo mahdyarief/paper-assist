@@ -24,7 +24,7 @@ from mcp_servers.runner import load_server  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "paperassist"
-SERVER_VERSION = "4.0.1"
+SERVER_VERSION = "4.1.0"
 
 INVALID_PARAMS = -32602
 

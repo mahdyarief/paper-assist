@@ -1,7 +1,7 @@
 # PaperAssist
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v4.0.1-2563eb" alt="Version v4.0.1" />
+  <img src="https://img.shields.io/badge/version-v4.1.0-2563eb" alt="Version v4.1.0" />
   <img src="https://img.shields.io/badge/Python-3.10--3.13-3776ab?logo=python&logoColor=white" alt="Python 3.10-3.13" />
 </p>
 

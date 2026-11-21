@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from mcp_servers.runner import load_server
+from mcp_servers.stdio import SERVER_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 STDIO = ROOT / "mcp_servers" / "stdio.py"
@@ -155,7 +156,7 @@ def test_stdio_protocol_round_trip(tmp_path):
         },
     )
     by_id = {response.get("id"): response for response in responses}
-    assert by_id[1]["result"]["serverInfo"]["version"] == "4.0.1"
+    assert by_id[1]["result"]["serverInfo"]["version"] == SERVER_VERSION
     tools = by_id[2]["result"]["tools"]
     assert len(tools) == 18
     assert all(tool["inputSchema"]["properties"] for tool in tools)
